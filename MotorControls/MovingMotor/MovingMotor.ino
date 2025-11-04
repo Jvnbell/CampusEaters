@@ -1,90 +1,77 @@
-// Motor A connections
-int enA = 9;
-int in1 = 8;
-int in2 = 7;
+const int IN1 = 5;
+const int IN2 = 4;
+const int ENA = 6;
+const int IN3 = 8;
+const int IN4 = 7;
+const int ENB = 9;
 
-// Motor B connections
-int enB = 3;
-int in3 = 5;
-int in4 = 4;
-
-int speedValue = 150; // default PWM (out of 255)
-
-void forward() {
-  digitalWrite(in1, HIGH);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, HIGH);
-  digitalWrite(in4, LOW);
-  analogWrite(enA, speedValue);
-  analogWrite(enB, speedValue);
-}
-
-void backward() {
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, HIGH);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, HIGH);
-  analogWrite(enA, speedValue);
-  analogWrite(enB, speedValue);
-}
-
-void turnLeft() {
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, HIGH);
-  digitalWrite(in3, HIGH);
-  digitalWrite(in4, LOW);
-  analogWrite(enA, speedValue);
-  analogWrite(enB, speedValue);
-}
-
-void turnRight() {
-  digitalWrite(in1, HIGH);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, HIGH);
-  analogWrite(enA, speedValue);
-  analogWrite(enB, speedValue);
-}
-
-void stopMotors() {
-  analogWrite(enA, 0);
-  analogWrite(enB, 0);
-}
-
+bool forward = true; // Track motor direction
 
 void setup() {
-  Serial.begin(9600);
-  pinMode(enA, OUTPUT);
-  pinMode(enB, OUTPUT);
-  pinMode(in1, OUTPUT);
-  pinMode(in2, OUTPUT);
-  pinMode(in3, OUTPUT);
-  pinMode(in4, OUTPUT);
-  Serial.println("Ready for commands (f/b/l/r/s/1–9)");
-}
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENA, OUTPUT);
 
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENB, OUTPUT);
+
+  Serial.begin(9600);
+  Serial.println("Motor ramp test starting...");
+  
+  setDirection(forward);
+}
 
 void loop() {
-  if (Serial.available() > 0) {
-  char cmd = Serial.read();
-  if (cmd == '\n' || cmd == '\r') return; // ignore line endings
-  
-  cmd = tolower(cmd);
-  switch (cmd) {
-    case 'f': forward(); Serial.println("Forward"); break;
-    case 'b': backward(); Serial.println("Backward"); break;
-    case 'l': turnLeft(); Serial.println("Left"); break;
-    case 'r': turnRight(); Serial.println("Right"); break;
-    case 's': stopMotors(); Serial.println("Stop"); break;
-    case '1'...'9':
-      speedValue = map(cmd - '0', 1, 9, 50, 255);
-      Serial.print("Speed set to: ");
-      Serial.println(speedValue);
-      break;
-    default:
-      Serial.println("Unknown command");
+  Serial.print("Direction: ");
+  Serial.println(forward ? "Forward" : "Backward");
+
+  // Ramp up
+  for (int speed = 0; speed <= 255; speed++) {
+    analogWrite(ENA, speed);
+    analogWrite(ENB, speed);
+    Serial.print("Speed: ");
+    Serial.println(speed);
+    delay(20);
   }
+
+  Serial.println("Holding at full speed...");
+  delay(1000);
+
+  // Ramp down
+  for (int speed = 255; speed >= 0; speed--) {
+    analogWrite(ENA, speed);
+    analogWrite(ENB, speed);
+    Serial.print("Speed: ");
+    Serial.println(speed);
+    delay(20);
+  }
+
+  Serial.println("Motors stopped.");
+  delay(1000);
+
+  // Flip direction
+  forward = !forward;
+  setDirection(forward);
+  Serial.println("Changing direction...");
+  Serial.println();
+}
+
+void setDirection(bool forward) {
+  if (forward) {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+  } else {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
   }
 }
+
+
+
 
 
