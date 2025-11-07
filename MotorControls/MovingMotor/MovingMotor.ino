@@ -5,13 +5,17 @@ const int IN3 = 8;
 const int IN4 = 7;
 const int ENB = 9;
 
-int currentSpeed = 0;     // Current PWM value (0–255)
-int targetSpeed = 0;      // Target PWM value (0–255)
-bool forward = true;      // Motor direction
-bool reversing = false;   // Flag for safe reversal
-const int rampDelay = 10; // ms per PWM step (smaller = faster ramp)
+int currentSpeedA = 0;
+int currentSpeedB = 0;
 
-const int DEFAULT_START_SPEED = 200; // speed when you press f/b from stopped
+int targetSpeedA = 0;
+int targetSpeedB = 0;
+
+bool forwardA = true;
+bool forwardB = true;
+
+const int rampDelay = 10; 
+const int FULL_SPEED = 200;
 
 void setup() {
   pinMode(IN1, OUTPUT);
@@ -23,146 +27,111 @@ void setup() {
   pinMode(ENB, OUTPUT);
 
   Serial.begin(9600);
-  Serial.println("Motor Control Interface (Safe Reversal + Smooth Ramping)");
-  Serial.println("Commands:");
-  Serial.println("  f = forward");
-  Serial.println("  b = backward");
-  Serial.println("  s = stop");
-  Serial.println("  0–255 = set PWM speed");
-  Serial.println("---------------------------------------");
-
-  // Ensure direction pins reflect the initial desired direction
-  setDirection(forward);
-  // start stopped
+  Serial.println("Motor Control Interface: Sharp Turns + Smooth Ramping");
+  Serial.println("Commands: f, b, s, fr, fl, br, bl, 0–255");
+  setDirection(true, true);
   stopMotors();
 }
 
 void loop() {
-  // Handle incoming serial commands
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
-    input.trim();                 // remove leading/trailing whitespace
-    if (input.length() == 0) {    // ignore empty lines (CR/LF)
-      return;
-    }
+    input.trim();
+    input.toLowerCase();
+    if (input.length() == 0) return;
 
-    if (input.equalsIgnoreCase("f")) {
-      // Always set desired direction to forward
-      if (!forward) {
-        // currently backward -> perform safe reversal
-        reversing = true;
-        forward = true;
-        Serial.println("Reversing to: Forward");
-      } else {
-        // already forward — set direction pins and start if stopped
-        setDirection(true);
-        if (targetSpeed == 0) {
-          targetSpeed = DEFAULT_START_SPEED;
-          Serial.print("Direction: Forward. Starting to speed ");
-          Serial.println(targetSpeed);
-        } else {
-          Serial.println("Direction: Forward");
-        }
-      }
-    }
-    else if (input.equalsIgnoreCase("b")) {
-      // Always set desired direction to backward
-      if (forward) {
-        reversing = true;
-        forward = false;
-        Serial.println("Reversing to: Backward");
-      } else {
-        setDirection(false);
-        if (targetSpeed == 0) {
-          targetSpeed = DEFAULT_START_SPEED;
-          Serial.print("Direction: Backward. Starting to speed ");
-          Serial.println(targetSpeed);
-        } else {
-          Serial.println("Direction: Backward");
-        }
-      }
-    }
-    else if (input.equalsIgnoreCase("s")) {
-      targetSpeed = 0;
-      Serial.println("Stopping motors (smooth)...");
-    }
-    else if (isNumber(input)) {
-      targetSpeed = constrain(input.toInt(), 0, 255);
+    if (input == "fr") {
+      moveSharp(true, true, true);  // forward, right, left motor stops
+      Serial.println("Forward-Right (sharp turn)");
+    } else if (input == "fl") {
+      moveSharp(true, true, false);
+      Serial.println("Forward-Left (sharp turn)");
+    } else if (input == "br") {
+      moveSharp(false, false, true);
+      Serial.println("Backward-Right (sharp turn)");
+    } else if (input == "bl") {
+      moveSharp(false, false, false);
+      Serial.println("Backward-Left (sharp turn)");
+    } else if (input == "f") {
+      setStraight(true);
+    } else if (input == "b") {
+      setStraight(false);
+    } else if (input == "s") {
+      targetSpeedA = 0;
+      targetSpeedB = 0;
+      Serial.println("Stopping motors...");
+    } else if (isNumber(input)) {
+      int val = constrain(input.toInt(), 0, 255);
+      targetSpeedA = val;
+      targetSpeedB = val;
       Serial.print("Target speed set to: ");
-      Serial.println(targetSpeed);
-    }
-    else {
+      Serial.println(val);
+    } else {
       Serial.print("Unknown command: ");
       Serial.println(input);
     }
   }
 
-  // Handle smooth ramping and safe reversal
-  if (reversing) {
-    // Step 1: Ramp down to 0 before switching
-    if (currentSpeed > 0) {
-      currentSpeed--;
-      analogWrite(ENA, currentSpeed);
-      analogWrite(ENB, currentSpeed);
-    } else {
-      // Step 2: Switch direction once fully stopped
-      setDirection(forward);
-      reversing = false;
-      Serial.print("Direction switched to: ");
-      Serial.println(forward ? "Forward" : "Backward");
-      // If targetSpeed is zero (stopped) but we want to start, set default
-      if (targetSpeed == 0) {
-        targetSpeed = DEFAULT_START_SPEED;
-        Serial.print("Starting to speed ");
-        Serial.println(targetSpeed);
-      }
-    }
-  } 
-  else {
-    // Normal speed ramping toward targetSpeed
-    if (currentSpeed < targetSpeed) {
-      currentSpeed++;
-      analogWrite(ENA, currentSpeed);
-      analogWrite(ENB, currentSpeed);
-    } else if (currentSpeed > targetSpeed) {
-      currentSpeed--;
-      analogWrite(ENA, currentSpeed);
-      analogWrite(ENB, currentSpeed);
-    }
-  }
+  // Ramp motors smoothly
+  rampMotor(currentSpeedA, targetSpeedA, ENA);
+  rampMotor(currentSpeedB, targetSpeedB, ENB);
 
   delay(rampDelay);
 }
 
-void setDirection(bool fwd) {
-  if (fwd) {
-    digitalWrite(IN1, HIGH);
-    digitalWrite(IN2, LOW);
-    digitalWrite(IN3, HIGH);
-    digitalWrite(IN4, LOW);
+// Smooth ramping function
+void rampMotor(int &currentSpeed, int targetSpeed, int pwmPin) {
+  if (currentSpeed < targetSpeed) currentSpeed++;
+  else if (currentSpeed > targetSpeed) currentSpeed--;
+  analogWrite(pwmPin, currentSpeed);
+}
+
+// Straight forward/backward
+void setStraight(bool fwd) {
+  forwardA = fwd;
+  forwardB = fwd;
+  setDirection(forwardA, forwardB);
+  targetSpeedA = FULL_SPEED;
+  targetSpeedB = FULL_SPEED;
+  Serial.print("Moving straight: ");
+  Serial.println(fwd ? "Forward" : "Backward");
+}
+
+// Sharp turn function: stop one motor, full speed other motor
+// stopLeft = true → left motor stops, right moves
+void moveSharp(bool fwdA, bool fwdB, bool stopLeft) {
+  forwardA = fwdA;
+  forwardB = fwdB;
+  setDirection(forwardA, forwardB);
+  if (stopLeft) {
+    targetSpeedA = 0;           // left motor stops
+    targetSpeedB = FULL_SPEED;   // right motor full speed
   } else {
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, HIGH);
-    digitalWrite(IN3, LOW);
-    digitalWrite(IN4, HIGH);
+    targetSpeedA = FULL_SPEED;   // left motor full speed
+    targetSpeedB = 0;           // right motor stops
   }
 }
 
+void setDirection(bool fwdA, bool fwdB) {
+  if (fwdA) { digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); }
+  else { digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); }
+
+  if (fwdB) { digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); }
+  else { digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); }
+}
+
 void stopMotors() {
-  currentSpeed = 0;
-  targetSpeed = 0;
-  analogWrite(ENA, 0);
-  analogWrite(ENB, 0);
-  // Keep direction pins as-is so future f/b commands behave predictably
+  targetSpeedA = 0;
+  targetSpeedB = 0;
 }
 
 bool isNumber(String str) {
   if (str.length() == 0) return false;
-  for (unsigned int i = 0; i < str.length(); i++) {
+  for (unsigned int i = 0; i < str.length(); i++)
     if (!isDigit(str.charAt(i))) return false;
-  }
   return true;
 }
+
 
 
 
