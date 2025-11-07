@@ -7,14 +7,15 @@ const int ENB = 9;
 
 int currentSpeedA = 0;
 int currentSpeedB = 0;
-
 int targetSpeedA = 0;
 int targetSpeedB = 0;
 
 bool forwardA = true;
 bool forwardB = true;
+bool pendingDirectionChange = false;
+bool nextDirectionA, nextDirectionB;
 
-const int rampDelay = 10; 
+const int rampDelay = 10;
 const int FULL_SPEED = 200;
 
 void setup() {
@@ -27,7 +28,7 @@ void setup() {
   pinMode(ENB, OUTPUT);
 
   Serial.begin(9600);
-  Serial.println("Motor Control Interface: Sharp Turns + Smooth Ramping");
+  Serial.println("Motor Control Interface: Safe Reversal + Sharp Turns + Smooth Ramping");
   Serial.println("Commands: f, b, s, fr, fl, br, bl, 0–255");
   setDirection(true, true);
   stopMotors();
@@ -41,21 +42,21 @@ void loop() {
     if (input.length() == 0) return;
 
     if (input == "fr") {
-      moveSharp(true, true, true);  // forward, right, left motor stops
+      safeMoveSharp(true, true, true);
       Serial.println("Forward-Right (sharp turn)");
     } else if (input == "fl") {
-      moveSharp(true, true, false);
+      safeMoveSharp(true, true, false);
       Serial.println("Forward-Left (sharp turn)");
     } else if (input == "br") {
-      moveSharp(false, false, true);
+      safeMoveSharp(false, false, true);
       Serial.println("Backward-Right (sharp turn)");
     } else if (input == "bl") {
-      moveSharp(false, false, false);
+      safeMoveSharp(false, false, false);
       Serial.println("Backward-Left (sharp turn)");
     } else if (input == "f") {
-      setStraight(true);
+      safeSetStraight(true);
     } else if (input == "b") {
-      setStraight(false);
+      safeSetStraight(false);
     } else if (input == "s") {
       targetSpeedA = 0;
       targetSpeedB = 0;
@@ -72,43 +73,65 @@ void loop() {
     }
   }
 
-  // Ramp motors smoothly
+  // Smooth ramping
   rampMotor(currentSpeedA, targetSpeedA, ENA);
   rampMotor(currentSpeedB, targetSpeedB, ENB);
+
+  // Once fully stopped, handle pending direction change
+  if (pendingDirectionChange && currentSpeedA == 0 && currentSpeedB == 0) {
+    setDirection(nextDirectionA, nextDirectionB);
+    forwardA = nextDirectionA;
+    forwardB = nextDirectionB;
+    pendingDirectionChange = false;
+  }
 
   delay(rampDelay);
 }
 
-// Smooth ramping function
+// Smooth ramping
 void rampMotor(int &currentSpeed, int targetSpeed, int pwmPin) {
   if (currentSpeed < targetSpeed) currentSpeed++;
   else if (currentSpeed > targetSpeed) currentSpeed--;
   analogWrite(pwmPin, currentSpeed);
 }
 
-// Straight forward/backward
-void setStraight(bool fwd) {
-  forwardA = fwd;
-  forwardB = fwd;
-  setDirection(forwardA, forwardB);
-  targetSpeedA = FULL_SPEED;
-  targetSpeedB = FULL_SPEED;
-  Serial.print("Moving straight: ");
-  Serial.println(fwd ? "Forward" : "Backward");
+// Safe straight motion
+void safeSetStraight(bool fwd) {
+  if ((forwardA != fwd) || (forwardB != fwd)) {
+    // If reversing direction, safely stop first
+    pendingDirectionChange = true;
+    nextDirectionA = fwd;
+    nextDirectionB = fwd;
+    targetSpeedA = 0;
+    targetSpeedB = 0;
+    Serial.println("Safe reversal: slowing to 0 before switching direction...");
+  } else {
+    targetSpeedA = FULL_SPEED;
+    targetSpeedB = FULL_SPEED;
+    Serial.print("Moving straight: ");
+    Serial.println(fwd ? "Forward" : "Backward");
+  }
 }
 
-// Sharp turn function: stop one motor, full speed other motor
-// stopLeft = true → left motor stops, right moves
-void moveSharp(bool fwdA, bool fwdB, bool stopLeft) {
-  forwardA = fwdA;
-  forwardB = fwdB;
-  setDirection(forwardA, forwardB);
-  if (stopLeft) {
-    targetSpeedA = 0;           // left motor stops
-    targetSpeedB = FULL_SPEED;   // right motor full speed
+// Safe sharp turn
+void safeMoveSharp(bool fwdA, bool fwdB, bool stopLeft) {
+  bool dirChange = (forwardA != fwdA) || (forwardB != fwdB);
+  if (dirChange) {
+    pendingDirectionChange = true;
+    nextDirectionA = fwdA;
+    nextDirectionB = fwdB;
+    targetSpeedA = 0;
+    targetSpeedB = 0;
+    Serial.println("Safe reversal: slowing to 0 before switching direction...");
   } else {
-    targetSpeedA = FULL_SPEED;   // left motor full speed
-    targetSpeedB = 0;           // right motor stops
+    setDirection(fwdA, fwdB);
+    if (stopLeft) {
+      targetSpeedA = 0;
+      targetSpeedB = FULL_SPEED;
+    } else {
+      targetSpeedA = FULL_SPEED;
+      targetSpeedB = 0;
+    }
   }
 }
 
@@ -131,6 +154,7 @@ bool isNumber(String str) {
     if (!isDigit(str.charAt(i))) return false;
   return true;
 }
+
 
 
 
