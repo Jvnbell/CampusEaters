@@ -31,7 +31,9 @@ void setup() {
 
   Serial.begin(9600);
   Serial.println("Motor Control Interface:");
-  Serial.println("Commands: f, b, s, fr, fl, br, bl, 0–255");
+  Serial.println("Direction Commands: f, b, s, fr, fl, br, bl");
+  Serial.println("Speed Commands: 0 - 255");
+
   setDirection(true, true);
   stopMotors();
 }
@@ -42,8 +44,12 @@ void loop() {
     input.trim();
     input.toLowerCase();
     if (input.length() == 0) return;
+    
+    else if (input == "status") {
+      printStatus();
+    }
 
-    handleCommand(input);
+    else handleCommand(input);
   }
 
   rampMotor(currentSpeedA, targetSpeedA, ENA);
@@ -70,7 +76,12 @@ void loop() {
 }
 
 void handleCommand(String input) {
-  if (input == "fr") {
+  if (input == "?" or input == "help") {
+    Serial.println("Motor Control Interface:");
+    Serial.println("Direction Commands: f, b, s, fr, fl, br, bl");
+    Serial.println("Speed Commands: 0 - 255");
+  }
+  else if (input == "fr") {
     safeMoveSharp(true, true, true, input);
   } else if (input == "fl") {
     safeMoveSharp(true, true, false, input);
@@ -167,6 +178,29 @@ bool isNumber(String str) {
     if (!isDigit(str.charAt(i))) return false;
   return true;
 }
+
+void printStatus() {
+  Serial.println("=== MOTOR STATUS ===");
+  
+  Serial.print("Motor A: ");
+  if (currentSpeedA == 0) Serial.print("Stopped");
+  else Serial.print(forwardA ? "Forward" : "Backward");
+  Serial.print(" | Speed: ");
+  Serial.println(currentSpeedA);
+
+  Serial.print("Motor B: ");
+  if (currentSpeedB == 0) Serial.print("Stopped");
+  else Serial.print(forwardB ? "Forward" : "Backward");
+  Serial.print(" | Speed: ");
+  Serial.println(currentSpeedB);
+
+  if (pendingDirectionChange) {
+    Serial.println("  Pending direction change in progress...");
+  }
+
+  Serial.println("====================");
+}
+
 
 
 
