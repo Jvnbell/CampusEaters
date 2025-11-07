@@ -19,9 +19,9 @@ Our long-term goal is to demonstrate how robotics can improve **accessibility, i
 ## Sprint Roadmap
 
 ### Semester 1
-- **Sprint 1**: Assemble chassis, wire motors, set up manual control, scaffold backend & website.  
-- **Sprint 2**: Implement basic navigation (line-following / waypoint system), database setup, order placement MVP.  
-- **Sprint 3**: Prototype food compartment, short autonomous test route, simple order status updates.  
+- **Sprint 1**: Wire motors, write PWM code, scaffold backend & website.  
+- **Sprint 2**: Construct chassis, database setup, order placement.  
+- **Sprint 3**: Construct power distribution system, simple order status updates, hardware stress test.  
 
 ### Semester 2
 - **More to come**.   
@@ -30,10 +30,11 @@ Our long-term goal is to demonstrate how robotics can improve **accessibility, i
 
 ## Tech Stack
 **Hardware**
-- Chassis (6WD off-road robot kit or equivalent)
-- Motors + drivers (12V DC, geared for torque)
+- Chassis 
+- Motors (Greartisan DC 12V 100RPM Gear Motor x2)
+- Motor Driver (DROK DC Motor Driver, L298 Dual H Bridge Motor Speed Controller)
 - LIDAR for obstacle detection
-- Raspberry Pi / Arduino for control
+- Arduino Mega for motor control
 - Secure container (custom-built)
 
 **Software**
