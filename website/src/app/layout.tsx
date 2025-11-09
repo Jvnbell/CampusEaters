@@ -4,6 +4,8 @@ import { Inter } from 'next/font/google';
 
 import './globals.css';
 
+import { SiteHeader } from '@/components/SiteHeader';
+
 import { Providers } from './providers';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -16,8 +18,13 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
-        <Providers>{children}</Providers>
+      <body className={`${inter.className} bg-slate-950 text-slate-100`}>
+        <Providers>
+          <div className="flex min-h-screen flex-col">
+            <SiteHeader />
+            <main className="flex-1">{children}</main>
+          </div>
+        </Providers>
       </body>
     </html>
   );
