@@ -69,6 +69,7 @@ model Order {
   userId       String
   restaurantId String
   botId        String?
+  deliveryLocation String
   status       OrderStatus @default(SENT)
   placedAt     DateTime    @default(now())
   updatedAt    DateTime    @updatedAt

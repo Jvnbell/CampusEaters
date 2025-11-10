@@ -73,6 +73,11 @@ const copyByVariant: Record<AuthCardVariant, AuthCopy> = {
   },
 };
 
+const roleByVariant: Record<AuthCardVariant, 'USER' | 'ADMIN' | 'RESTAURANT'> = {
+  default: 'USER',
+  admin: 'ADMIN',
+};
+
 type AuthCardProps = {
   variant?: AuthCardVariant;
   defaultMode?: AuthMode;
@@ -85,6 +90,9 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
   const [authMode, setAuthMode] = useState<AuthMode>(defaultMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const copy = useMemo(() => copyByVariant[variant], [variant]);
@@ -101,6 +109,9 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
 
     setEmail('');
     setPassword('');
+    setFirstName('');
+    setLastName('');
+    setPhoneNumber('');
     toast.success('Signed out successfully.');
   };
 
@@ -120,6 +131,12 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
     setIsSubmitting(true);
 
     if (authMode === 'signUp') {
+      if (!firstName.trim() || !lastName.trim()) {
+        toast.error('Please provide your first and last name.');
+        setIsSubmitting(false);
+        return;
+      }
+
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -135,9 +152,40 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
         return;
       }
 
+      try {
+        const profileResponse = await fetch('/api/users', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email,
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            phoneNumber: phoneNumber.trim() || undefined,
+            role: roleByVariant[variant],
+          }),
+        });
+
+        if (!profileResponse.ok) {
+          const body = await profileResponse.json().catch(() => ({}));
+          throw new Error(body.error ?? 'Failed to create profile.');
+        }
+      } catch (profileError) {
+        toast.error(
+          profileError instanceof Error
+            ? profileError.message
+            : 'Account created but there was an issue creating your profile. Please contact support.',
+        );
+        return;
+      }
+
       toast.success('Check your inbox to confirm your email address before signing in.');
       setAuthMode('signIn');
       setPassword('');
+      setFirstName('');
+      setLastName('');
+      setPhoneNumber('');
 
       return;
     }
@@ -218,6 +266,46 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {authMode === 'signUp' && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First name</Label>
+                <Input
+                  id="firstName"
+                  placeholder="Your first name"
+                  autoComplete="given-name"
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last name</Label>
+                <Input
+                  id="lastName"
+                  placeholder="Your last name"
+                  autoComplete="family-name"
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="phoneNumber">Phone number (optional)</Label>
+                <Input
+                  id="phoneNumber"
+                  type="tel"
+                  placeholder="(555) 123-4567"
+                  autoComplete="tel"
+                  value={phoneNumber}
+                  onChange={(event) => setPhoneNumber(event.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="email">Email address</Label>
             <Input
