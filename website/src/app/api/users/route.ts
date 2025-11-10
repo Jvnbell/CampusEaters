@@ -17,6 +17,7 @@ export async function GET(request: Request) {
           email: true,
           phoneNumber: true,
           role: true,
+          restaurantId: true,
         },
       });
 
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
         email: true,
         phoneNumber: true,
         role: true,
+        restaurantId: true,
       },
       orderBy: [
         { firstName: 'asc' },
@@ -56,6 +58,7 @@ export async function POST(request: Request) {
       firstName?: string;
       lastName?: string;
       phoneNumber?: string;
+      restaurantId?: string;
       role?: 'USER' | 'ADMIN' | 'RESTAURANT';
     };
 
@@ -69,6 +72,7 @@ export async function POST(request: Request) {
         firstName: body.firstName,
         lastName: body.lastName,
         phoneNumber: body.phoneNumber ?? null,
+        restaurantId: body.restaurantId ?? null,
         role: body.role ?? undefined,
       },
       create: {
@@ -76,6 +80,7 @@ export async function POST(request: Request) {
         firstName: body.firstName,
         lastName: body.lastName,
         phoneNumber: body.phoneNumber ?? null,
+        restaurantId: body.restaurantId ?? null,
         role: body.role ?? 'USER',
       },
     });

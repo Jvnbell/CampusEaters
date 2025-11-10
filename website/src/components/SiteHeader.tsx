@@ -7,11 +7,17 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
+import { useCurrentProfile } from '@/hooks/use-current-profile';
 
 const authenticatedNavLinks = [
   { href: '/', label: 'Home' },
   { href: '/request-delivery', label: 'Request Delivery' },
   { href: '/track-package', label: 'Track Package' },
+];
+
+const restaurantNavLinks = [
+  { href: '/', label: 'Home' },
+  { href: '/restaurant/orders', label: 'Manage Orders' },
 ];
 
 const marketingNavLinks = [
@@ -31,6 +37,7 @@ const getIsActive = (pathname: string, href: string) => {
 export const SiteHeader = () => {
   const pathname = usePathname();
   const { supabase, user, isLoading } = useSupabaseAuth();
+  const { profile } = useCurrentProfile();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleSignOut = async () => {
@@ -46,7 +53,11 @@ export const SiteHeader = () => {
     toast.success('Signed out successfully.');
   };
 
-  const navLinks = user ? authenticatedNavLinks : marketingNavLinks;
+  const navLinks = user
+    ? profile?.role === 'RESTAURANT'
+      ? restaurantNavLinks
+      : authenticatedNavLinks
+    : marketingNavLinks;
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-xl">

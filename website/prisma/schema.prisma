@@ -26,6 +26,8 @@ model User {
   lastName    String
   email       String   @unique
   phoneNumber String?
+  restaurantId String?
+  restaurant  Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
   role        AccountRole @default(USER)
   orders      Order[]
   createdAt   DateTime @default(now())
@@ -38,6 +40,7 @@ model Restaurant {
   location  String
   menuItems MenuItem[]
   orders    Order[]
+  users     User[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 }

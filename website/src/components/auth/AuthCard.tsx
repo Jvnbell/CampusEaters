@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Shield, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -86,6 +87,7 @@ type AuthCardProps = {
 };
 
 export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', className, redirectPath = '/' }: AuthCardProps) => {
+  const router = useRouter();
   const { supabase, user, isLoading } = useSupabaseAuth();
   const [authMode, setAuthMode] = useState<AuthMode>(defaultMode);
   const [email, setEmail] = useState('');
@@ -123,14 +125,15 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
       return;
     }
 
-    if (!isAllowedEmail(email)) {
-      toast.error('Please use your UT or Spartans UT email address.');
-      return;
-    }
-
     setIsSubmitting(true);
 
     if (authMode === 'signUp') {
+      if (!isAllowedEmail(email)) {
+        toast.error('Please use your UT or Spartans UT email address.');
+        setIsSubmitting(false);
+        return;
+      }
+
       if (!firstName.trim() || !lastName.trim()) {
         toast.error('Please provide your first and last name.');
         setIsSubmitting(false);
@@ -192,14 +195,45 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    setIsSubmitting(false);
-
     if (error) {
+      setIsSubmitting(false);
       toast.error(error.message);
       return;
     }
 
-    toast.success('Signed in successfully.');
+    try {
+      const profileResponse = await fetch(`/api/users?email=${encodeURIComponent(email)}`);
+      if (!profileResponse.ok) {
+        const body = await profileResponse.json().catch(() => ({}));
+        throw new Error(body.error ?? 'Unable to load profile.');
+      }
+      const { user: profile } = (await profileResponse.json()) as {
+        user: {
+          role: 'USER' | 'ADMIN' | 'RESTAURANT';
+          restaurantId?: string | null;
+        };
+      };
+
+      toast.success('Signed in successfully.');
+
+      if (profile.role === 'RESTAURANT' && profile.restaurantId) {
+        router.push('/restaurant/orders');
+      } else {
+        router.push(redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`);
+      }
+      router.refresh();
+    } catch (profileError) {
+      toast.success('Signed in successfully.');
+      toast.error(
+        profileError instanceof Error
+          ? profileError.message
+          : 'Signed in, but we could not load your profile. Please refresh the page.',
+      );
+      router.push(redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`);
+      router.refresh();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const toggleAuthMode = () => {
@@ -349,7 +383,9 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
           </p>
 
           <p className="text-center text-xs text-muted-foreground">
-            Only {allowedDomains.map((domain) => `@${domain}`).join(' or ')} email addresses are permitted.
+            {authMode === 'signUp'
+              ? `Only ${allowedDomains.map((domain) => `@${domain}`).join(' or ')} email addresses are permitted when creating a new account.`
+              : 'Sign in with the email associated with your account.'}
           </p>
         </form>
       </CardContent>

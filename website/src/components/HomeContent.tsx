@@ -3,8 +3,11 @@
 import Link from 'next/link';
 import {
   ArrowRight,
+  CheckCircle2,
+  ClipboardList,
   Cpu,
   Globe,
+  Headset,
   MapPin,
   Package,
   Zap,
@@ -14,6 +17,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
+import { useCurrentProfile, type UserProfile } from '@/hooks/use-current-profile';
 
 const MarketingHero = () => (
   <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
@@ -232,7 +236,110 @@ const MarketingHero = () => (
   </div>
 );
 
-const AuthenticatedHome = () => (
+const RestaurantHome = ({ profile }: { profile: UserProfile }) => (
+  <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 py-20">
+    <div className="container mx-auto px-4">
+      <div className="mx-auto max-w-5xl space-y-12 rounded-3xl border border-slate-800/60 bg-slate-900/60 p-10 shadow-lg shadow-cyan-500/10">
+        <div className="flex flex-col items-center gap-6 text-center">
+          <span className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-cyan-200">
+            <Sparkle className="h-4 w-4" />
+            Restaurant command center
+          </span>
+          <h1 className="text-4xl font-semibold text-white md:text-5xl">Welcome back, {profile.firstName}</h1>
+          <p className="max-w-2xl text-lg text-slate-300">
+            Keep your CampusEats queue moving—monitor new requests, prep meals on time, and update robot handoffs in one
+            place.
+          </p>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+          <div className="space-y-6">
+            <div className="rounded-3xl border border-blue-500/40 bg-blue-500/15 p-6 shadow-lg shadow-blue-500/20">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Manage active orders</h2>
+                  <p className="mt-2 text-sm text-blue-100/80">
+                    Review incoming CampusEats requests, confirm prep windows, and update the robot handoff status as your
+                    team works.
+                  </p>
+                </div>
+                <Package className="h-8 w-8 text-cyan-200" />
+              </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button asChild className="w-full sm:w-auto">
+                  <Link href="/restaurant/orders">
+                    Open order management
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-800/70 bg-slate-900/60 p-6">
+              <div className="flex items-center gap-3">
+                <ClipboardList className="h-6 w-6 text-slate-200" />
+                <h3 className="text-lg font-semibold text-white">Kitchen operations checklist</h3>
+              </div>
+              <ul className="mt-4 space-y-3 text-sm text-slate-300">
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-cyan-300" />
+                  <span>Confirm pickup windows with CampusEats bots before meals leave the line.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-cyan-300" />
+                  <span>Stage clearly labeled orders so the robot team can verify contents quickly.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-cyan-300" />
+                  <span>Update each order status as soon as the robot departs to keep students notified in real time.</span>
+                </li>
+              </ul>
+              <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 text-xs text-slate-400">
+                Pro tip: keep this dashboard open on a dedicated tablet so your team sees new orders the moment they
+                arrive.
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6 rounded-3xl border border-slate-800/70 bg-slate-900/70 p-6">
+            <div className="flex items-center gap-3">
+              <Headset className="h-6 w-6 text-cyan-200" />
+              <h3 className="text-lg font-semibold text-white">Restaurant resources</h3>
+            </div>
+            <p className="text-sm text-slate-300">
+              Need to adjust menu availability, update prep times, or report an operational issue? The CampusEats ops team
+              is ready to help.
+            </p>
+            <div className="space-y-3">
+              <Button asChild className="w-full">
+                <Link href="mailto:support@campuseats.com">
+                  Email operations
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                className="w-full border-slate-700 text-slate-100 hover:bg-slate-800/70"
+              >
+                <Link href="/restaurant/orders">
+                  View live queue
+                  <Truck className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 text-xs text-blue-100/80">
+              Live status updates push straight to students. Keep orders marked accurately so the robot fleet stays on
+              schedule.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const UserHome = ({ profile }: { profile: UserProfile | null }) => (
   <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 py-20">
     <div className="container mx-auto px-4">
       <div className="mx-auto max-w-4xl rounded-3xl border border-slate-800/60 bg-slate-900/60 p-10 shadow-lg shadow-cyan-500/10">
@@ -241,7 +348,9 @@ const AuthenticatedHome = () => (
             <Sparkle className="h-4 w-4" />
             Autonomous deliveries available now
           </span>
-          <h1 className="text-4xl font-semibold text-white md:text-5xl">Welcome back to CampusEats</h1>
+          <h1 className="text-4xl font-semibold text-white md:text-5xl">
+            {profile ? `Welcome back, ${profile.firstName}` : 'Welcome back to CampusEats'}
+          </h1>
           <p className="max-w-2xl text-lg text-slate-300">
             Ready for another delivery? Request fresh meals from your favorite campus restaurants or track your active
             orders in real time.
@@ -271,13 +380,17 @@ const AuthenticatedHome = () => (
             <div className="flex items-center gap-3">
               <Truck className="h-10 w-10 text-slate-200" />
               <div>
-                <h2 className="text-xl font-semibold text-white">Track Deliveries</h2>
+                <h2 className="text-xl font-semibold text-white">Track deliveries</h2>
                 <p className="text-sm text-slate-300">
                   Follow real-time progress for active deliveries and revisit your order history.
                 </p>
               </div>
             </div>
-            <Button asChild variant="outline" className="mt-6 w-full border-slate-700 text-slate-100">
+            <Button
+              asChild
+              variant="outline"
+              className="mt-6 w-full border-slate-700 text-slate-100"
+            >
               <Link href="/track-package">
                 View my deliveries
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -290,8 +403,17 @@ const AuthenticatedHome = () => (
   </div>
 );
 
+const AuthenticatedHome = ({ profile }: { profile: UserProfile | null }) => {
+  if (profile?.role === 'RESTAURANT') {
+    return <RestaurantHome profile={profile} />;
+  }
+
+  return <UserHome profile={profile} />;
+};
+
 export const HomeContent = () => {
   const { user, isLoading } = useSupabaseAuth();
+  const { profile, isLoading: profileLoading } = useCurrentProfile();
 
   if (isLoading) {
     return (
@@ -305,7 +427,15 @@ export const HomeContent = () => {
     return <MarketingHero />;
   }
 
-  return <AuthenticatedHome />;
+  if (profileLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-cyan-500 border-t-transparent" />
+      </div>
+    );
+  }
+
+  return <AuthenticatedHome profile={profile} />;
 };
 
 

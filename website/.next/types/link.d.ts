@@ -34,11 +34,14 @@ declare namespace __next_route_internal_types__ {
     | `/api/restaurants`
     | `/api/users`
     | `/login`
-    | `/signup`
     | `/request-delivery`
+    | `/restaurant/orders`
+    | `/signup`
     | `/track-package`
   type DynamicRoutes<T extends string = string> = 
     | `/api/orders/${SafeSlug<T>}`
+    | `/api/orders/id/${SafeSlug<T>}`
+    | `/api/restaurants/${SafeSlug<T>}/orders`
 
   type RouteImpl<T> = 
     | StaticRoutes
