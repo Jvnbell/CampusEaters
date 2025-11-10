@@ -100,4 +100,47 @@ export async function POST(request: Request) {
   }
 }
 
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
+    if (!userId) {
+      return NextResponse.json({ error: 'Missing userId query parameter.' }, { status: 400 });
+    }
+
+    const orders = await prisma.order.findMany({
+      where: { userId },
+      include: {
+        restaurant: {
+          select: {
+            name: true,
+            location: true,
+          },
+        },
+        orderItems: {
+          select: {
+            id: true,
+            quantity: true,
+            menuItem: {
+              select: {
+                name: true,
+                price: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        placedAt: 'desc',
+      },
+    });
+
+    return NextResponse.json({ orders });
+  } catch (error) {
+    console.error('Failed to fetch orders', error);
+    return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 });
+  }
+}
+
 

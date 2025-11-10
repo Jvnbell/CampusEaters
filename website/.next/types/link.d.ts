@@ -38,7 +38,8 @@ declare namespace __next_route_internal_types__ {
     | `/signup`
     | `/request-delivery`
     | `/track-package`
-  type DynamicRoutes<T extends string = string> = never
+  type DynamicRoutes<T extends string = string> = 
+    | `/api/orders/${SafeSlug<T>}`
 
   type RouteImpl<T> = 
     | StaticRoutes
