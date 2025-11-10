@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
 import TrackDelivery from '@/components/TrackDelivery';
+import { AuthGate } from '@/components/auth/AuthGate';
 import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = {
@@ -39,7 +40,12 @@ export default function TrackPackagePage() {
             </p>
           </div>
 
-          <TrackDelivery />
+          <AuthGate
+            title="Sign in to track your deliveries"
+            description="Track Package combines your active deliveries and order history. Please sign in with your UT email to continue."
+          >
+            <TrackDelivery />
+          </AuthGate>
         </div>
       </main>
 

@@ -1,9 +1,10 @@
 {
   "/request-delivery/page": "app/request-delivery/page.js",
   "/track-package/page": "app/track-package/page.js",
-  "/api/users/route": "app/api/users/route.js",
-  "/api/orders/route": "app/api/orders/route.js",
-  "/api/restaurants/route": "app/api/restaurants/route.js",
   "/page": "app/page.js",
-  "/admin/page": "app/admin/page.js"
+  "/signup/page": "app/signup/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/icon.svg/route": "app/icon.svg/route.js",
+  "/api/users/route": "app/api/users/route.js",
+  "/api/orders/route": "app/api/orders/route.js"
 }

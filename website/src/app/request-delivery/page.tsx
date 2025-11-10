@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
 import DeliveryRequest from '@/components/DeliveryRequest';
+import { AuthGate } from '@/components/auth/AuthGate';
 import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = {
@@ -40,7 +41,12 @@ export default function RequestDeliveryPage() {
             </p>
           </div>
 
-          <DeliveryRequest />
+          <AuthGate
+            title="Sign in to request a delivery"
+            description="CampusEats deliveries are available to authenticated UT students and staff. Sign in with your campus email to get started."
+          >
+            <DeliveryRequest />
+          </AuthGate>
         </div>
       </main>
 
