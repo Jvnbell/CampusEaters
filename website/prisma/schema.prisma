@@ -14,12 +14,19 @@ enum OrderStatus {
   DELIVERED
 }
 
+enum AccountRole {
+  USER
+  ADMIN
+  RESTAURANT
+}
+
 model User {
   id          String   @id @default(cuid())
   firstName   String
   lastName    String
   email       String   @unique
   phoneNumber String?
+  role        AccountRole @default(USER)
   orders      Order[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
