@@ -33,6 +33,7 @@ void setup() {
   Serial.println("Motor Control Interface:");
   Serial.println("Direction Commands: f, b, s, fr, fl, br, bl");
   Serial.println("Speed Commands: 0 - 255");
+  Serial.println("Other: ?, help, status");
 
   setDirection(true, true);
   stopMotors();
