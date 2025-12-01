@@ -1,7 +1,16 @@
-import { Resend } from 'resend';
 import type { OrderStatus } from '@prisma/client';
+import nodemailer from 'nodemailer';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Gmail SMTP transporter
+const gmailTransporter = process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD, // Use App Password, not regular password
+      },
+    })
+  : null;
 
 type OrderStatusEmailData = {
   userEmail: string;
@@ -32,17 +41,33 @@ const statusMessages: Record<OrderStatus, { subject: string; message: string }> 
 };
 
 export async function sendOrderStatusEmail(data: OrderStatusEmailData): Promise<void> {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('RESEND_API_KEY is not set. Email notification skipped.');
+  console.log('[Email] Attempting to send order status email:', {
+    userEmail: data.userEmail,
+    orderNumber: data.orderNumber,
+    status: data.status,
+  });
+
+  if (!gmailTransporter || !process.env.GMAIL_USER) {
+    console.warn('[Email] Gmail SMTP not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD in your .env file.');
     return;
+  }
+
+  await sendViaGmail(data);
+}
+
+async function sendViaGmail(data: OrderStatusEmailData): Promise<void> {
+  if (!gmailTransporter || !process.env.GMAIL_USER) {
+    throw new Error('Gmail transporter not initialized');
   }
 
   const statusInfo = statusMessages[data.status];
   const statusLabel = data.status.charAt(0) + data.status.slice(1).toLowerCase();
 
   try {
-    await resend.emails.send({
-      from: 'CampusEaters <onboarding@resend.dev>',
+    console.log('[Email] Sending email via Gmail SMTP...');
+    
+    const mailOptions = {
+      from: `CampusEaters <${process.env.GMAIL_USER}>`,
       to: data.userEmail,
       subject: statusInfo.subject,
       html: `
@@ -106,10 +131,22 @@ export async function sendOrderStatusEmail(data: OrderStatusEmailData): Promise<
         ---
         This is an automated email. Please do not reply to this message.
       `,
+    };
+
+    const info = await gmailTransporter.sendMail(mailOptions);
+    console.log('[Email] Email sent successfully via Gmail:', {
+      messageId: info.messageId,
+      to: data.userEmail,
+      subject: statusInfo.subject,
     });
   } catch (error) {
-    console.error('Failed to send order status email:', error);
+    console.error('[Email] Failed to send email via Gmail:', error);
+    if (error instanceof Error) {
+      console.error('[Email] Error details:', {
+        message: error.message,
+        name: error.name,
+      });
+    }
     // Don't throw - we don't want email failures to break order updates
   }
 }
-

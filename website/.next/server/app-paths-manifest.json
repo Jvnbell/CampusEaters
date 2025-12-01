@@ -1,10 +1,9 @@
 {
-  "/page": "app/page.js",
-  "/login/page": "app/login/page.js",
-  "/icon.svg/route": "app/icon.svg/route.js",
   "/api/users/route": "app/api/users/route.js",
   "/request-delivery/page": "app/request-delivery/page.js",
+  "/icon.svg/route": "app/icon.svg/route.js",
+  "/login/page": "app/login/page.js",
+  "/page": "app/page.js",
   "/api/restaurants/route": "app/api/restaurants/route.js",
-  "/track-package/page": "app/track-package/page.js",
   "/api/orders/route": "app/api/orders/route.js"
 }

@@ -95,6 +95,7 @@ export async function PATCH(
 
     // Send email notification if status changed
     if (statusChanged && body.status && updatedOrder.user && updatedOrder.restaurant) {
+      console.log('[API /orders/id PATCH] Sending status update email...');
       await sendOrderStatusEmail({
         userEmail: updatedOrder.user.email,
         userName: `${updatedOrder.user.firstName} ${updatedOrder.user.lastName}`,
@@ -103,6 +104,11 @@ export async function PATCH(
         restaurantName: updatedOrder.restaurant.name,
         deliveryLocation: updatedOrder.deliveryLocation,
       });
+      console.log('[API /orders/id PATCH] Email notification sent');
+    } else if (body.status && !statusChanged) {
+      console.log('[API /orders/id PATCH] Status unchanged, skipping email');
+    } else {
+      console.log('[API /orders/id PATCH] No status change or missing data, skipping email');
     }
 
     return NextResponse.json({ order: updatedOrder });

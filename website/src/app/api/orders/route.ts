@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
+import { sendOrderStatusEmail } from '@/lib/email';
 
 type CreateOrderBody = {
   restaurantId: string;
@@ -90,8 +91,36 @@ export async function POST(request: Request) {
             menuItem: true,
           },
         },
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        restaurant: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
+
+    // Send email notification when order is created (status is SENT by default)
+    if (order.user && order.restaurant) {
+      console.log('[API /orders POST] Sending order confirmation email...');
+      await sendOrderStatusEmail({
+        userEmail: order.user.email,
+        userName: `${order.user.firstName} ${order.user.lastName}`,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        restaurantName: order.restaurant.name,
+        deliveryLocation: order.deliveryLocation,
+      });
+      console.log('[API /orders POST] Email notification sent');
+    } else {
+      console.warn('[API /orders POST] Cannot send email - missing user or restaurant data');
+    }
 
     return NextResponse.json({ order }, { status: 201 });
   } catch (error) {
