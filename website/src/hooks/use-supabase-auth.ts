@@ -11,6 +11,15 @@ export const useSupabaseAuth = () => {
   useEffect(() => {
     let isMounted = true;
 
+    // Check for existing session first (faster than getUser)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (isMounted) {
+        setUser(session?.user ?? null);
+        setIsLoading(false);
+      }
+    });
+
+    // Then verify with getUser in the background
     supabase.auth
       .getUser()
       .then(({ data }) => {
@@ -32,7 +41,10 @@ export const useSupabaseAuth = () => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      if (isMounted) {
+        setUser(session?.user ?? null);
+        setIsLoading(false);
+      }
     });
 
     return () => {

@@ -140,7 +140,7 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
         return;
       }
 
-      const { error } = await supabase.auth.signUp({
+      const { error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -148,40 +148,86 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
         },
       });
 
-      setIsSubmitting(false);
-
-      if (error) {
-        toast.error(error.message);
+      if (signUpError) {
+        setIsSubmitting(false);
+        toast.error(signUpError.message);
         return;
       }
 
       try {
+        // Add timeout to fetch request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+        const requestBody = {
+          email,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          phoneNumber: phoneNumber.trim() || undefined,
+          role: roleByVariant[variant],
+        };
+
+        console.log('[AuthCard] Attempting to create profile:', { email, firstName: firstName.trim(), lastName: lastName.trim() });
+        
         const profileResponse = await fetch('/api/users', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            email,
-            firstName: firstName.trim(),
-            lastName: lastName.trim(),
-            phoneNumber: phoneNumber.trim() || undefined,
-            role: roleByVariant[variant],
-          }),
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
+        console.log('[AuthCard] Profile response status:', profileResponse.status);
 
         if (!profileResponse.ok) {
           const body = await profileResponse.json().catch(() => ({}));
-          throw new Error(body.error ?? 'Failed to create profile.');
+          // Combine error and details for better user feedback
+          let errorMsg = body.error || `Failed to create profile (${profileResponse.status}).`;
+          if (body.details) {
+            errorMsg += ` ${body.details}`;
+          }
+          if (body.hint) {
+            errorMsg += ` ${body.hint}`;
+          }
+          console.error('[AuthCard] API error response:', { status: profileResponse.status, body });
+          throw new Error(errorMsg);
         }
+        
+        const result = await profileResponse.json();
+        console.log('[AuthCard] Profile created successfully:', result.user?.id);
       } catch (profileError) {
-        toast.error(
-          profileError instanceof Error
-            ? profileError.message
-            : 'Account created but there was an issue creating your profile. Please contact support.',
-        );
+        setIsSubmitting(false);
+        
+        console.error('[AuthCard] Profile creation error details:', {
+          error: profileError,
+          name: profileError instanceof Error ? profileError.name : 'Unknown',
+          message: profileError instanceof Error ? profileError.message : String(profileError),
+          stack: profileError instanceof Error ? profileError.stack : undefined,
+        });
+        
+        let errorMessage = 'Account created but there was an issue creating your profile. Please contact support.';
+        
+        if (profileError instanceof Error) {
+          if (profileError.name === 'AbortError') {
+            errorMessage = 'Request timed out. Please try again.';
+          } else if (profileError.message === 'Failed to fetch' || profileError instanceof TypeError) {
+            errorMessage = 'Unable to connect to the server. Please make sure the server is running and try again.';
+          } else if (profileError.message.includes('timeout')) {
+            errorMessage = 'The request took too long. Please try again.';
+          } else {
+            errorMessage = profileError.message;
+          }
+        } else if (profileError instanceof TypeError) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        }
+        
+        toast.error(errorMessage);
         return;
       }
+
+      setIsSubmitting(false);
 
       toast.success('Check your inbox to confirm your email address before signing in.');
       setAuthMode('signIn');
