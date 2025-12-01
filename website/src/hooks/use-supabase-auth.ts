@@ -42,7 +42,7 @@ export const useSupabaseAuth = () => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (isMounted) {
-        setUser(session?.user ?? null);
+      setUser(session?.user ?? null);
         setIsLoading(false);
       }
     });

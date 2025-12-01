@@ -62,13 +62,25 @@ export const RestaurantOrders = () => {
     if (!restaurantId) return;
     setIsFetching(true);
     try {
-      const response = await fetch(`/api/restaurants/${restaurantId}/orders`);
+      // Add cache-busting to ensure fresh data
+      const response = await fetch(`/api/restaurants/${restaurantId}/orders?t=${Date.now()}`, {
+        cache: 'no-store',
+      });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error ?? 'Failed to load orders.');
       }
       const data = (await response.json()) as { orders: RestaurantOrder[] };
-      setOrders(data.orders);
+      console.log(`[RestaurantOrders] Fetched ${data.orders.length} orders. Statuses:`, 
+        data.orders.map(o => ({ number: o.orderNumber, status: o.status })));
+      
+      // Filter out any DELIVERED orders that might have slipped through
+      const filteredOrders = data.orders.filter((order) => order.status !== 'DELIVERED');
+      if (filteredOrders.length !== data.orders.length) {
+        console.warn(`[RestaurantOrders] Filtered out ${data.orders.length - filteredOrders.length} DELIVERED orders`);
+      }
+      
+      setOrders(filteredOrders);
     } catch (fetchError) {
       console.error(fetchError);
       toast.error(fetchError instanceof Error ? fetchError.message : 'Unable to load orders.');
@@ -99,11 +111,29 @@ export const RestaurantOrders = () => {
         throw new Error(body.error ?? 'Failed to update order.');
       }
 
-      toast.success('Order status updated.');
-      await fetchOrders();
+      // If order is marked as DELIVERED, remove it from the list immediately
+      if (status === 'DELIVERED') {
+        setOrders((prevOrders) => {
+          const filtered = prevOrders.filter((order) => order.id !== orderId);
+          console.log(`[RestaurantOrders] Removed DELIVERED order ${orderId}. Remaining orders:`, filtered.length);
+          return filtered;
+        });
+        toast.success('Order marked as delivered and removed from active orders.');
+        // Don't refetch for DELIVERED orders since they're excluded from the API anyway
+      } else {
+        // Update the order in the local state immediately for better UX
+        setOrders((prevOrders) =>
+          prevOrders.map((order) => (order.id === orderId ? { ...order, status } : order)),
+        );
+        toast.success('Order status updated.');
+        // Refetch to ensure we have the latest data for other status changes
+        await fetchOrders();
+      }
     } catch (updateError) {
       console.error(updateError);
       toast.error(updateError instanceof Error ? updateError.message : 'Unable to update order.');
+      // Refetch on error to ensure state is correct
+      await fetchOrders();
     } finally {
       setUpdatingOrderId(null);
     }

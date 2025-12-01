@@ -150,7 +150,7 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
       });
 
       if (signUpError) {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
         toast.error(signUpError.message);
         return;
       }
@@ -402,7 +402,7 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="password">{authMode === 'signIn' ? 'Password' : 'Create a password'}</Label>
+            <Label htmlFor="password">{authMode === 'signIn' ? 'Password' : 'Create a password'}</Label>
               {authMode === 'signIn' && (
                 <Link
                   href="/forgot-password"
