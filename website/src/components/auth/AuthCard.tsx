@@ -264,9 +264,10 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
       toast.success('Signed in successfully.');
 
       if (profile.role === 'RESTAURANT' && profile.restaurantId) {
-        router.push('/restaurant/orders');
+        router.push('/restaurant/orders' as any);
       } else {
-        router.push(redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`);
+        const path = redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`;
+        router.push(path as any);
       }
       router.refresh();
     } catch (profileError) {
@@ -276,7 +277,8 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
           ? profileError.message
           : 'Signed in, but we could not load your profile. Please refresh the page.',
       );
-      router.push(redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`);
+      const path = redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`;
+      router.push(path as any);
       router.refresh();
     } finally {
       setIsSubmitting(false);

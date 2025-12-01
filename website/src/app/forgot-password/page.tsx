@@ -18,7 +18,8 @@ export default function ForgotPasswordPage() {
     
     if (hasRecoveryToken) {
       // Redirect to reset-password with the token
-      router.push(`/reset-password${window.location.hash}`);
+      // Use window.location for full URL with hash since Next.js router doesn't handle hash fragments
+      window.location.href = `/reset-password${window.location.hash}`;
       return;
     }
 
@@ -44,7 +45,7 @@ export default function ForgotPasswordPage() {
         <div className="space-y-2 text-center">
           <h1 className="text-3xl font-semibold text-white">Reset Your Password</h1>
           <p className="text-sm text-slate-400">
-            Enter your email address and we'll send you a link to reset your password.
+            Enter your email address and we&apos;ll send you a link to reset your password.
           </p>
         </div>
         <ForgotPasswordCard />

@@ -58,14 +58,14 @@ export const ForgotPasswordCard = () => {
             <Shield className="h-6 w-6 text-primary" />
             <CardTitle>Check Your Email</CardTitle>
           </div>
-          <CardDescription>We've sent a password reset link to {email}</CardDescription>
+          <CardDescription>We&apos;ve sent a password reset link to {email}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Click the link in the email to reset your password. The link will expire in 1 hour.
           </p>
           <p className="text-sm text-muted-foreground">
-            Didn't receive the email? Check your spam folder or try again.
+            Didn&apos;t receive the email? Check your spam folder or try again.
           </p>
           <div className="flex flex-col gap-2">
             <Button
@@ -95,7 +95,7 @@ export const ForgotPasswordCard = () => {
           <CardTitle>Forgot Password</CardTitle>
         </div>
         <CardDescription>
-          Enter your email address and we'll send you a link to reset your password.
+          Enter your email address and we&apos;ll send you a link to reset your password.
         </CardDescription>
       </CardHeader>
       <CardContent>
