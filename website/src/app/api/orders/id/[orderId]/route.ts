@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
+import { sendOrderStatusEmail } from '@/lib/email';
 
 const VALID_STATUSES = ['SENT', 'RECEIVED', 'SHIPPING', 'DELIVERED'] as const;
 
@@ -30,6 +31,34 @@ export async function PATCH(
   }
 
   try {
+    // Get current order to check if status is changing
+    const currentOrder = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        status: true,
+        orderNumber: true,
+        deliveryLocation: true,
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        restaurant: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!currentOrder) {
+      return NextResponse.json({ error: 'Order not found.' }, { status: 404 });
+    }
+
+    const statusChanged = body.status && body.status !== currentOrder.status;
+
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: {
@@ -64,11 +93,24 @@ export async function PATCH(
       },
     });
 
+    // Send email notification if status changed
+    if (statusChanged && body.status && updatedOrder.user && updatedOrder.restaurant) {
+      await sendOrderStatusEmail({
+        userEmail: updatedOrder.user.email,
+        userName: `${updatedOrder.user.firstName} ${updatedOrder.user.lastName}`,
+        orderNumber: updatedOrder.orderNumber,
+        status: body.status,
+        restaurantName: updatedOrder.restaurant.name,
+        deliveryLocation: updatedOrder.deliveryLocation,
+      });
+    }
+
     return NextResponse.json({ order: updatedOrder });
   } catch (error) {
     console.error('Failed to update order', error);
     return NextResponse.json({ error: 'Failed to update order.' }, { status: 500 });
   }
 }
+
 
 
