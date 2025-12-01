@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Shield, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -400,7 +401,17 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">{authMode === 'signIn' ? 'Password' : 'Create a password'}</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">{authMode === 'signIn' ? 'Password' : 'Create a password'}</Label>
+              {authMode === 'signIn' && (
+                <Link
+                  href="/forgot-password"
+                  className="text-xs text-primary underline-offset-4 hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              )}
+            </div>
             <Input
               id="password"
               type="password"
