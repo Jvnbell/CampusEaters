@@ -98,6 +98,7 @@ export const RestaurantOrders = () => {
   const handleStatusUpdate = async (orderId: string, status: OrderStatus) => {
     setUpdatingOrderId(orderId);
     try {
+      console.log(`[RestaurantOrders] Updating order ${orderId} to status: ${status}`);
       const response = await fetch(`/api/orders/id/${orderId}`, {
         method: 'PATCH',
         headers: {
@@ -111,26 +112,19 @@ export const RestaurantOrders = () => {
         throw new Error(body.error ?? 'Failed to update order.');
       }
 
-      // If order is marked as DELIVERED, remove it from the list immediately
+      const data = await response.json();
+      console.log(`[RestaurantOrders] Order update response:`, { orderId, newStatus: data.order?.status });
+
+      // Always refetch to ensure we have the latest data from the database
+      await fetchOrders();
+      
       if (status === 'DELIVERED') {
-        setOrders((prevOrders) => {
-          const filtered = prevOrders.filter((order) => order.id !== orderId);
-          console.log(`[RestaurantOrders] Removed DELIVERED order ${orderId}. Remaining orders:`, filtered.length);
-          return filtered;
-        });
         toast.success('Order marked as delivered and removed from active orders.');
-        // Don't refetch for DELIVERED orders since they're excluded from the API anyway
       } else {
-        // Update the order in the local state immediately for better UX
-        setOrders((prevOrders) =>
-          prevOrders.map((order) => (order.id === orderId ? { ...order, status } : order)),
-        );
         toast.success('Order status updated.');
-        // Refetch to ensure we have the latest data for other status changes
-        await fetchOrders();
       }
     } catch (updateError) {
-      console.error(updateError);
+      console.error('[RestaurantOrders] Update error:', updateError);
       toast.error(updateError instanceof Error ? updateError.message : 'Unable to update order.');
       // Refetch on error to ensure state is correct
       await fetchOrders();
@@ -139,10 +133,16 @@ export const RestaurantOrders = () => {
     }
   };
 
-  const activeOrders = useMemo(
-    () => orders.filter((order) => order.status !== 'DELIVERED'),
-    [orders],
-  );
+  const activeOrders = useMemo(() => {
+    const filtered = orders.filter((order) => order.status !== 'DELIVERED');
+    console.log(`[RestaurantOrders] activeOrders computed: ${filtered.length} orders from ${orders.length} total`);
+    console.log(`[RestaurantOrders] Order details:`, filtered.map(o => ({ 
+      id: o.id, 
+      orderNumber: o.orderNumber, 
+      status: o.status 
+    })));
+    return filtered;
+  }, [orders]);
 
   if (isLoading || isFetching) {
     return (
@@ -231,24 +231,26 @@ export const RestaurantOrders = () => {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-white">Active orders</h2>
-          <p className="text-sm text-slate-400">
-            Update order statuses as your kitchen processes requests. Students see these changes in real time.
-          </p>
-        </div>
-        <Button variant="outline" className="border-slate-700 text-slate-100" onClick={fetchOrders}>
-          Refresh
-        </Button>
-      </div>
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-white">
+                Active orders ({activeOrders.length})
+              </h2>
+              <p className="text-sm text-slate-400">
+                Update order statuses as your kitchen processes requests. Students see these changes in real time.
+              </p>
+            </div>
+            <Button variant="outline" className="border-slate-700 text-slate-100" onClick={fetchOrders}>
+              Refresh
+            </Button>
+          </div>
 
-      <div className="grid gap-6">
-        {activeOrders.map((order) => {
-          const currentIndex = STATUS_FLOW.indexOf(order.status);
-          const nextStatuses = STATUS_FLOW.filter((status) => STATUS_FLOW.indexOf(status) >= currentIndex);
+          <div className="grid gap-6">
+            {activeOrders.map((order) => {
+                const currentIndex = STATUS_FLOW.indexOf(order.status);
+                const nextStatuses = STATUS_FLOW.filter((status) => STATUS_FLOW.indexOf(status) >= currentIndex);
 
           const orderTotal = order.orderItems.reduce((sum, item) => {
             const price = Number(item.menuItem.price);
@@ -332,7 +334,7 @@ export const RestaurantOrders = () => {
             </Card>
           );
         })}
-      </div>
+          </div>
     </div>
   );
 };

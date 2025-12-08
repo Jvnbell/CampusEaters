@@ -12,13 +12,16 @@ type UpdatePayload = {
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { orderId: string } },
+  { params }: { params: Promise<{ orderId: string }> | { orderId: string } },
 ) {
-  const { orderId } = params;
+  const resolvedParams = await Promise.resolve(params);
+  const { orderId } = resolvedParams;
 
   if (!orderId) {
     return NextResponse.json({ error: 'Order ID is required.' }, { status: 400 });
   }
+  
+  console.log(`[API] Updating order ${orderId}`);
 
   const body = (await request.json()) as UpdatePayload;
 
@@ -58,13 +61,22 @@ export async function PATCH(
     }
 
     const statusChanged = body.status && body.status !== currentOrder.status;
+    
+    console.log(`[API] Current status: ${currentOrder.status}, New status: ${body.status}, Changed: ${statusChanged}`);
+
+    const updateData: { status?: string; botId?: string | null } = {};
+    if (body.status !== undefined) {
+      updateData.status = body.status;
+    }
+    if (body.botId !== undefined) {
+      updateData.botId = body.botId;
+    }
+
+    console.log(`[API] Update data:`, updateData);
 
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
-      data: {
-        status: body.status,
-        botId: body.botId,
-      },
+      data: updateData,
       include: {
         orderItems: {
           select: {
@@ -92,6 +104,8 @@ export async function PATCH(
         },
       },
     });
+    
+    console.log(`[API] Order updated successfully. Order #${updatedOrder.orderNumber} status is now: ${updatedOrder.status}`);
 
     // Send email notification if status changed
     if (statusChanged && body.status && updatedOrder.user && updatedOrder.restaurant) {
