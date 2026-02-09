@@ -1,15 +1,26 @@
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
+import { getAuthUserAndProfile, unauthorized, forbidden } from '@/lib/api-auth';
 
 export async function GET(
   _request: Request,
-  { params }: { params: { orderNumber: string } },
+  { params }: { params: Promise<{ orderNumber: string }> | { orderNumber: string } },
 ) {
-  const orderNumber = Number(params.orderNumber);
+  const resolvedParams = await Promise.resolve(params);
+  const orderNumber = Number(resolvedParams.orderNumber);
 
   if (Number.isNaN(orderNumber)) {
     return NextResponse.json({ error: 'Invalid order number' }, { status: 400 });
+  }
+
+  const auth = await getAuthUserAndProfile();
+  if (!auth) return unauthorized();
+  if (!auth.profile) {
+    return NextResponse.json(
+      { error: 'No CampusEats profile found for your account.' },
+      { status: 403 },
+    );
   }
 
   try {
@@ -18,6 +29,7 @@ export async function GET(
       include: {
         user: {
           select: {
+            id: true,
             firstName: true,
             lastName: true,
             email: true,
@@ -52,6 +64,14 @@ export async function GET(
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    }
+
+    const isOwner = order.userId === auth.profile.id;
+    const isAdmin = auth.profile.role === 'ADMIN';
+    const isRestaurantOrder =
+      auth.profile.role === 'RESTAURANT' && auth.profile.restaurantId === order.restaurantId;
+    if (!isOwner && !isAdmin && !isRestaurantOrder) {
+      return forbidden('You can only view your own orders or orders for your restaurant.');
     }
 
     return NextResponse.json({ order });

@@ -1,13 +1,23 @@
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
+import { getAuthUserAndProfile, unauthorized, forbidden } from '@/lib/api-auth';
 
 export async function GET(request: Request) {
   try {
+    const auth = await getAuthUserAndProfile();
+    if (!auth) return unauthorized();
+
     const { searchParams } = new URL(request.url);
     const email = searchParams.get('email');
 
     if (email) {
+      const isOwnProfile = auth.authUser.email.toLowerCase() === email.toLowerCase();
+      const isAdmin = auth.profile?.role === 'ADMIN';
+      if (!isOwnProfile && !isAdmin) {
+        return forbidden('You can only view your own profile.');
+      }
+
       const user = await prisma.user.findUnique({
         where: { email },
         select: {
@@ -26,9 +36,12 @@ export async function GET(request: Request) {
       }
 
       const response = NextResponse.json({ user });
-      // Cache the response for 30 seconds to speed up subsequent requests
       response.headers.set('Cache-Control', 'private, s-maxage=30, stale-while-revalidate=60');
       return response;
+    }
+
+    if (auth.profile?.role !== 'ADMIN') {
+      return forbidden('Only administrators can list all users.');
     }
 
     const users = await prisma.user.findMany({
@@ -57,6 +70,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   console.log('[API /users POST] Request received');
   try {
+    const auth = await getAuthUserAndProfile();
+    if (!auth) return unauthorized();
+
     const body = (await request.json()) as {
       email?: string;
       firstName?: string;
@@ -65,11 +81,18 @@ export async function POST(request: Request) {
       restaurantId?: string;
       role?: 'USER' | 'ADMIN' | 'RESTAURANT';
     };
-    
-    console.log('[API /users POST] Request body:', { email: body.email, firstName: body.firstName, lastName: body.lastName });
 
     if (!body.email || !body.firstName || !body.lastName) {
       return NextResponse.json({ error: 'email, firstName, and lastName are required.' }, { status: 400 });
+    }
+
+    const isOwnProfile = auth.authUser.email.toLowerCase() === body.email.toLowerCase();
+    const isAdmin = auth.profile?.role === 'ADMIN';
+    if (!isOwnProfile && !isAdmin) {
+      return forbidden('You can only create or update your own profile.');
+    }
+    if (!isAdmin && body.role !== undefined && body.role !== auth.profile?.role) {
+      return forbidden('Only administrators can change user roles.');
     }
 
     const user = await prisma.user.upsert({
