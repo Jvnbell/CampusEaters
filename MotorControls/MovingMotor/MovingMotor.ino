@@ -19,6 +19,7 @@ String pendingAction = "";  // store next move after direction change
 
 const int rampDelay = 10;
 const int FULL_SPEED = 200;
+float motorB_trim = 0.90;  // Reduce Motor B power by 10%
 
 void setup() {
   pinMode(IN1, OUTPUT);
@@ -29,7 +30,7 @@ void setup() {
   pinMode(IN4, OUTPUT);
   pinMode(ENB, OUTPUT);
 
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("Motor Control Interface:");
   Serial.println("Direction Commands: f, b, s, fr, fl, br, bl");
   Serial.println("Speed Commands: 0 - 255");
@@ -114,7 +115,11 @@ void handleCommand(String input) {
 void rampMotor(int &currentSpeed, int targetSpeed, int pwmPin) {
   if (currentSpeed < targetSpeed) currentSpeed++;
   else if (currentSpeed > targetSpeed) currentSpeed--;
-  analogWrite(pwmPin, currentSpeed);
+  if (pwmPin == ENB) {
+    analogWrite(pwmPin, currentSpeed * motorB_trim);
+} else {
+    analogWrite(pwmPin, currentSpeed);
+}
 }
 
 // Straight motion
@@ -160,12 +165,24 @@ void safeMoveSharp(bool fwdA, bool fwdB, bool stopLeft, String command) {
 }
 
 void setDirection(bool fwdA, bool fwdB) {
-  if (fwdA) { digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); }
-  else { digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); }
 
-  // Motor B reversed for mirrored layout
-  if (fwdB) { digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); }
-  else { digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); }
+  // Motor A: invert forward/backward
+  if (fwdA) { 
+    digitalWrite(IN1, LOW); 
+    digitalWrite(IN2, HIGH); 
+  } else { 
+    digitalWrite(IN1, HIGH); 
+    digitalWrite(IN2, LOW); 
+  }
+
+  // Motor B: invert forward/backward (keeping mirrored layout)
+  if (fwdB) { 
+    digitalWrite(IN3, HIGH); 
+    digitalWrite(IN4, LOW);  
+  } else { 
+    digitalWrite(IN3, LOW); 
+    digitalWrite(IN4, HIGH); 
+  }
 }
 
 void stopMotors() {
