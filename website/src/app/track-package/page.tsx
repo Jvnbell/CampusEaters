@@ -48,12 +48,6 @@ export default function TrackPackagePage() {
           </AuthGate>
         </div>
       </main>
-
-      <footer className="mt-20 border-t border-slate-700/50 bg-slate-900/50 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-8">
-          <p className="text-center text-sm text-slate-400">© 2024 CampusEats. Delivering the future, today.</p>
-        </div>
-      </footer>
     </div>
   );
 }

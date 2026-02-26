@@ -52,11 +52,11 @@ export const AuthGate = ({
           </CardHeader>
           <CardContent className="space-y-3">
             <Button asChild className="w-full">
-              <Link href={actionHref}>{actionLabel}</Link>
+              <Link href={actionHref as any}>{actionLabel}</Link>
             </Button>
             {secondaryHref && secondaryLabel ? (
               <Button asChild variant="outline" className="w-full border-slate-700 text-slate-100">
-                <Link href={secondaryHref}>{secondaryLabel}</Link>
+                <Link href={secondaryHref as any}>{secondaryLabel}</Link>
               </Button>
             ) : null}
           </CardContent>

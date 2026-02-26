@@ -62,13 +62,25 @@ export const RestaurantOrders = () => {
     if (!restaurantId) return;
     setIsFetching(true);
     try {
-      const response = await fetch(`/api/restaurants/${restaurantId}/orders`);
+      // Add cache-busting to ensure fresh data
+      const response = await fetch(`/api/restaurants/${restaurantId}/orders?t=${Date.now()}`, {
+        cache: 'no-store',
+      });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error ?? 'Failed to load orders.');
       }
       const data = (await response.json()) as { orders: RestaurantOrder[] };
-      setOrders(data.orders);
+      console.log(`[RestaurantOrders] Fetched ${data.orders.length} orders. Statuses:`, 
+        data.orders.map(o => ({ number: o.orderNumber, status: o.status })));
+      
+      // Filter out any DELIVERED orders that might have slipped through
+      const filteredOrders = data.orders.filter((order) => order.status !== 'DELIVERED');
+      if (filteredOrders.length !== data.orders.length) {
+        console.warn(`[RestaurantOrders] Filtered out ${data.orders.length - filteredOrders.length} DELIVERED orders`);
+      }
+      
+      setOrders(filteredOrders);
     } catch (fetchError) {
       console.error(fetchError);
       toast.error(fetchError instanceof Error ? fetchError.message : 'Unable to load orders.');
@@ -86,6 +98,7 @@ export const RestaurantOrders = () => {
   const handleStatusUpdate = async (orderId: string, status: OrderStatus) => {
     setUpdatingOrderId(orderId);
     try {
+      console.log(`[RestaurantOrders] Updating order ${orderId} to status: ${status}`);
       const response = await fetch(`/api/orders/id/${orderId}`, {
         method: 'PATCH',
         headers: {
@@ -99,20 +112,37 @@ export const RestaurantOrders = () => {
         throw new Error(body.error ?? 'Failed to update order.');
       }
 
-      toast.success('Order status updated.');
+      const data = await response.json();
+      console.log(`[RestaurantOrders] Order update response:`, { orderId, newStatus: data.order?.status });
+
+      // Always refetch to ensure we have the latest data from the database
       await fetchOrders();
+      
+      if (status === 'DELIVERED') {
+        toast.success('Order marked as delivered and removed from active orders.');
+      } else {
+        toast.success('Order status updated.');
+      }
     } catch (updateError) {
-      console.error(updateError);
+      console.error('[RestaurantOrders] Update error:', updateError);
       toast.error(updateError instanceof Error ? updateError.message : 'Unable to update order.');
+      // Refetch on error to ensure state is correct
+      await fetchOrders();
     } finally {
       setUpdatingOrderId(null);
     }
   };
 
-  const activeOrders = useMemo(
-    () => orders.filter((order) => order.status !== 'DELIVERED'),
-    [orders],
-  );
+  const activeOrders = useMemo(() => {
+    const filtered = orders.filter((order) => order.status !== 'DELIVERED');
+    console.log(`[RestaurantOrders] activeOrders computed: ${filtered.length} orders from ${orders.length} total`);
+    console.log(`[RestaurantOrders] Order details:`, filtered.map(o => ({ 
+      id: o.id, 
+      orderNumber: o.orderNumber, 
+      status: o.status 
+    })));
+    return filtered;
+  }, [orders]);
 
   if (isLoading || isFetching) {
     return (
@@ -201,24 +231,26 @@ export const RestaurantOrders = () => {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-white">Active orders</h2>
-          <p className="text-sm text-slate-400">
-            Update order statuses as your kitchen processes requests. Students see these changes in real time.
-          </p>
-        </div>
-        <Button variant="outline" className="border-slate-700 text-slate-100" onClick={fetchOrders}>
-          Refresh
-        </Button>
-      </div>
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-white">
+                Active orders ({activeOrders.length})
+              </h2>
+              <p className="text-sm text-slate-400">
+                Update order statuses as your kitchen processes requests. Students see these changes in real time.
+              </p>
+            </div>
+            <Button variant="outline" className="border-slate-700 text-slate-100" onClick={fetchOrders}>
+              Refresh
+            </Button>
+          </div>
 
-      <div className="grid gap-6">
-        {activeOrders.map((order) => {
-          const currentIndex = STATUS_FLOW.indexOf(order.status);
-          const nextStatuses = STATUS_FLOW.filter((status) => STATUS_FLOW.indexOf(status) >= currentIndex);
+          <div className="grid gap-6">
+            {activeOrders.map((order) => {
+                const currentIndex = STATUS_FLOW.indexOf(order.status);
+                const nextStatuses = STATUS_FLOW.filter((status) => STATUS_FLOW.indexOf(status) >= currentIndex);
 
           const orderTotal = order.orderItems.reduce((sum, item) => {
             const price = Number(item.menuItem.price);
@@ -302,9 +334,10 @@ export const RestaurantOrders = () => {
             </Card>
           );
         })}
-      </div>
+          </div>
     </div>
   );
 };
+
 
 

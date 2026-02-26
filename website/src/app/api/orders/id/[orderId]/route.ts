@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
+import { sendOrderStatusEmail } from '@/lib/email';
+import { getAuthUserAndProfile, unauthorized, forbidden } from '@/lib/api-auth';
 
 const VALID_STATUSES = ['SENT', 'RECEIVED', 'SHIPPING', 'DELIVERED'] as const;
 
@@ -11,13 +13,32 @@ type UpdatePayload = {
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { orderId: string } },
+  { params }: { params: Promise<{ orderId: string }> | { orderId: string } },
 ) {
-  const { orderId } = params;
+  const resolvedParams = await Promise.resolve(params);
+  const { orderId } = resolvedParams;
 
   if (!orderId) {
     return NextResponse.json({ error: 'Order ID is required.' }, { status: 400 });
   }
+
+  const auth = await getAuthUserAndProfile();
+  if (!auth) return unauthorized();
+  if (!auth.profile) {
+    return NextResponse.json(
+      { error: 'No CampusEats profile found for your account.' },
+      { status: 403 },
+    );
+  }
+
+  const isAdmin = auth.profile.role === 'ADMIN';
+  const isRestaurant = auth.profile.role === 'RESTAURANT' && auth.profile.restaurantId;
+
+  if (!isAdmin && !isRestaurant) {
+    return forbidden('Only restaurant staff or administrators can update order status.');
+  }
+
+  console.log(`[API] Updating order ${orderId}`);
 
   const body = (await request.json()) as UpdatePayload;
 
@@ -30,12 +51,53 @@ export async function PATCH(
   }
 
   try {
+    const currentOrder = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        status: true,
+        orderNumber: true,
+        restaurantId: true,
+        deliveryLocation: true,
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        restaurant: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!currentOrder) {
+      return NextResponse.json({ error: 'Order not found.' }, { status: 404 });
+    }
+
+    if (isRestaurant && currentOrder.restaurantId !== auth.profile.restaurantId) {
+      return forbidden('You can only update orders for your own restaurant.');
+    }
+
+    const statusChanged = body.status && body.status !== currentOrder.status;
+    
+    console.log(`[API] Current status: ${currentOrder.status}, New status: ${body.status}, Changed: ${statusChanged}`);
+
+    const updateData: { status?: string; botId?: string | null } = {};
+    if (body.status !== undefined) {
+      updateData.status = body.status;
+    }
+    if (body.botId !== undefined) {
+      updateData.botId = body.botId;
+    }
+
+    console.log(`[API] Update data:`, updateData);
+
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
-      data: {
-        status: body.status,
-        botId: body.botId,
-      },
+      data: updateData,
       include: {
         orderItems: {
           select: {
@@ -63,6 +125,26 @@ export async function PATCH(
         },
       },
     });
+    
+    console.log(`[API] Order updated successfully. Order #${updatedOrder.orderNumber} status is now: ${updatedOrder.status}`);
+
+    // Send email notification if status changed
+    if (statusChanged && body.status && updatedOrder.user && updatedOrder.restaurant) {
+      console.log('[API /orders/id PATCH] Sending status update email...');
+      await sendOrderStatusEmail({
+        userEmail: updatedOrder.user.email,
+        userName: `${updatedOrder.user.firstName} ${updatedOrder.user.lastName}`,
+        orderNumber: updatedOrder.orderNumber,
+        status: body.status,
+        restaurantName: updatedOrder.restaurant.name,
+        deliveryLocation: updatedOrder.deliveryLocation,
+      });
+      console.log('[API /orders/id PATCH] Email notification sent');
+    } else if (body.status && !statusChanged) {
+      console.log('[API /orders/id PATCH] Status unchanged, skipping email');
+    } else {
+      console.log('[API /orders/id PATCH] No status change or missing data, skipping email');
+    }
 
     return NextResponse.json({ order: updatedOrder });
   } catch (error) {
@@ -70,5 +152,6 @@ export async function PATCH(
     return NextResponse.json({ error: 'Failed to update order.' }, { status: 500 });
   }
 }
+
 
 

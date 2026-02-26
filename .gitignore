@@ -16,6 +16,7 @@ pnpm-debug.log*
 
 # Next.js build output
 .next/
+.next/**
 out/
 .turbo/
 .vercel/
@@ -38,3 +39,19 @@ prisma/dev.db-journal
 
 # macOS metadata
 .DS_Store
+
+# Website-specific build artifacts
+website/.next/
+website/.next/**
+website/node_modules/
+website/dist/
+website/coverage/
+website/prisma/migrations/
+website/prisma/dev.db
+website/prisma/dev.db-journal
+
+# Next.js cache files
+**/.next/cache/
+**/.next/server/
+**/.next/static/
+**/.next/types/
