@@ -167,21 +167,21 @@ void safeMoveSharp(bool fwdA, bool fwdB, bool stopLeft, String command) {
 void setDirection(bool fwdA, bool fwdB) {
 
   // Motor A: invert forward/backward
-  if (fwdA) { 
-    digitalWrite(IN1, LOW); 
-    digitalWrite(IN2, HIGH); 
-  } else { 
-    digitalWrite(IN1, HIGH); 
-    digitalWrite(IN2, LOW); 
+  if (fwdA) {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+  } else {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
   }
 
   // Motor B: invert forward/backward (keeping mirrored layout)
-  if (fwdB) { 
-    digitalWrite(IN3, HIGH); 
-    digitalWrite(IN4, LOW);  
-  } else { 
-    digitalWrite(IN3, LOW); 
-    digitalWrite(IN4, HIGH); 
+  if (fwdB) {
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+  } else {
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
   }
 }
 
