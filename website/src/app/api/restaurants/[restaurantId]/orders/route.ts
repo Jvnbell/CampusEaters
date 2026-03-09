@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
+import { getAuthUserAndProfile, unauthorized, forbidden } from '@/lib/api-auth';
 
 export async function GET(
   _request: Request,
@@ -11,6 +12,22 @@ export async function GET(
 
   if (!restaurantId) {
     return NextResponse.json({ error: 'Restaurant ID is required.' }, { status: 400 });
+  }
+
+  const auth = await getAuthUserAndProfile();
+  if (!auth) return unauthorized();
+  if (!auth.profile) {
+    return NextResponse.json(
+      { error: 'No CampusEats profile found for your account.' },
+      { status: 403 },
+    );
+  }
+
+  const isAdmin = auth.profile.role === 'ADMIN';
+  const isOwnRestaurant =
+    auth.profile.role === 'RESTAURANT' && auth.profile.restaurantId === restaurantId;
+  if (!isAdmin && !isOwnRestaurant) {
+    return forbidden('You can only view orders for your own restaurant.');
   }
 
   try {

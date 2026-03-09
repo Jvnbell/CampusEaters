@@ -1,6 +1,27 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { faker } from '@faker-js/faker';
 
-const prisma = new PrismaClient();
+// Use direct connection for seeding - bypasses Prisma Accelerate when it can't
+// reach the database. Set DIRECT_URL in .env to your Supabase direct connection
+// string (port 5432). Get it from Supabase Dashboard → Settings → Database.
+const directUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
+if (!directUrl) {
+  throw new Error('DIRECT_URL or DATABASE_URL must be set in .env');
+}
+
+// Force binary engine for direct DB connection (Accelerate/dataproxy uses prisma:// URLs)
+const originalEngine = process.env.PRISMA_CLIENT_ENGINE_TYPE;
+process.env.PRISMA_CLIENT_ENGINE_TYPE = 'library';
+
+const prisma = new PrismaClient({
+  datasources: { db: { url: directUrl } },
+});
+
+// Restore original for any downstream code
+if (originalEngine !== undefined) process.env.PRISMA_CLIENT_ENGINE_TYPE = originalEngine;
+
+const USER_COUNT = 10_000;
+const BATCH_SIZE = 1_000;
 
 const restaurantsData = [
   {
@@ -30,8 +51,29 @@ const restaurantsData = [
 async function main() {
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.user.deleteMany();
   await prisma.menuItem.deleteMany();
   await prisma.restaurant.deleteMany();
+
+  // Seed 10k users in batches
+  console.log(`Seeding ${USER_COUNT} users...`);
+  for (let i = 0; i < USER_COUNT; i += BATCH_SIZE) {
+    const batchSize = Math.min(BATCH_SIZE, USER_COUNT - i);
+    const users = Array.from({ length: batchSize }, (_, j) => {
+      const firstName = faker.person.firstName();
+      const lastName = faker.person.lastName();
+      return {
+        firstName,
+        lastName,
+        email: `user${i + j}@campuseaters.example.com`,
+        phoneNumber: faker.helpers.maybe(() => faker.phone.number(), { probability: 0.7 }) ?? null,
+        role: 'USER' as const,
+      };
+    });
+    await prisma.user.createMany({ data: users });
+    console.log(`  Created users ${i + 1}-${i + batchSize}`);
+  }
+  console.log(`✓ Seeded ${USER_COUNT} users`);
 
   for (const restaurant of restaurantsData) {
     await prisma.restaurant.create({

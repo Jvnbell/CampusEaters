@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
 import { sendOrderStatusEmail } from '@/lib/email';
+import { getAuthUserAndProfile, unauthorized, forbidden } from '@/lib/api-auth';
 
 const VALID_STATUSES = ['SENT', 'RECEIVED', 'SHIPPING', 'DELIVERED'] as const;
 
@@ -20,7 +21,23 @@ export async function PATCH(
   if (!orderId) {
     return NextResponse.json({ error: 'Order ID is required.' }, { status: 400 });
   }
-  
+
+  const auth = await getAuthUserAndProfile();
+  if (!auth) return unauthorized();
+  if (!auth.profile) {
+    return NextResponse.json(
+      { error: 'No CampusEats profile found for your account.' },
+      { status: 403 },
+    );
+  }
+
+  const isAdmin = auth.profile.role === 'ADMIN';
+  const isRestaurant = auth.profile.role === 'RESTAURANT' && auth.profile.restaurantId;
+
+  if (!isAdmin && !isRestaurant) {
+    return forbidden('Only restaurant staff or administrators can update order status.');
+  }
+
   console.log(`[API] Updating order ${orderId}`);
 
   const body = (await request.json()) as UpdatePayload;
@@ -34,12 +51,12 @@ export async function PATCH(
   }
 
   try {
-    // Get current order to check if status is changing
     const currentOrder = await prisma.order.findUnique({
       where: { id: orderId },
       select: {
         status: true,
         orderNumber: true,
+        restaurantId: true,
         deliveryLocation: true,
         user: {
           select: {
@@ -58,6 +75,10 @@ export async function PATCH(
 
     if (!currentOrder) {
       return NextResponse.json({ error: 'Order not found.' }, { status: 404 });
+    }
+
+    if (isRestaurant && currentOrder.restaurantId !== auth.profile.restaurantId) {
+      return forbidden('You can only update orders for your own restaurant.');
     }
 
     const statusChanged = body.status && body.status !== currentOrder.status;

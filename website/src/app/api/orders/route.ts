@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
 import { sendOrderStatusEmail } from '@/lib/email';
+import { getAuthUserAndProfile, unauthorized } from '@/lib/api-auth';
 
 type CreateOrderBody = {
   restaurantId: string;
-  userId: string;
+  userId?: string; // ignored; server uses authenticated user's profile id
   deliveryLocation: string;
   items: Array<{
     menuItemId: string;
@@ -26,17 +27,25 @@ const generateOrderNumber = async () => {
 
 export async function POST(request: Request) {
   try {
+    const auth = await getAuthUserAndProfile();
+    if (!auth) return unauthorized();
+    if (!auth.profile) {
+      return NextResponse.json(
+        { error: 'No CampusEats profile found for your account. Please contact an administrator.' },
+        { status: 403 },
+      );
+    }
+
     const body = (await request.json()) as CreateOrderBody;
 
     if (
       !body.restaurantId ||
-      !body.userId ||
       !body.deliveryLocation ||
       !Array.isArray(body.items) ||
       body.items.length === 0
     ) {
       return NextResponse.json(
-        { error: 'Missing required fields: restaurantId, userId, deliveryLocation, and at least one item.' },
+        { error: 'Missing required fields: restaurantId, deliveryLocation, and at least one item.' },
         { status: 400 },
       );
     }
@@ -76,7 +85,7 @@ export async function POST(request: Request) {
       data: {
         orderNumber,
         restaurantId: body.restaurantId,
-        userId: body.userId,
+        userId: auth.profile.id,
         deliveryLocation: body.deliveryLocation,
         orderItems: {
           create: sanitizedItems.map((item) => ({
@@ -131,15 +140,17 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Missing userId query parameter.' }, { status: 400 });
+    const auth = await getAuthUserAndProfile();
+    if (!auth) return unauthorized();
+    if (!auth.profile) {
+      return NextResponse.json(
+        { error: 'No CampusEats profile found for your account.' },
+        { status: 403 },
+      );
     }
 
     const orders = await prisma.order.findMany({
-      where: { userId },
+      where: { userId: auth.profile.id },
       include: {
         restaurant: {
           select: {
