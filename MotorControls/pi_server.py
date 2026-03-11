@@ -6,7 +6,7 @@ import serial
 PI_HOST = "0.0.0.0"      # listen on all interfaces
 PI_PORT = 5000           # port laptop will connect to
 SERIAL_PORT = "/dev/ttyACM0"   # change if needed
-BAUDRATE = 9600
+BAUDRATE = 115200
 
 VALID_COMMANDS = {"f", "b", "s", "fr", "fl", "br", "bl", "status", "help", "?"}
 
