@@ -20,21 +20,37 @@ class ArduinoBridge:
         # flush startup text
         self._drain_serial()
 
-    def _drain_serial(self):
+    def _drain_serial(self, timeout=0.5):
+        """Read all available lines from serial with proper timeout handling."""
         lines = []
-        time.sleep(0.2)
-        while self.ser.in_waiting:
-            line = self.ser.readline().decode("utf-8", errors="ignore").strip()
-            if line:
-                lines.append(line)
+        deadline = time.time() + timeout
+        
+        while time.time() < deadline:
+            if self.ser.in_waiting:
+                line = self.ser.readline().decode("utf-8", errors="ignore").strip()
+                if line:
+                    lines.append(line)
+                    # Reset deadline when we get data - more might be coming
+                    deadline = time.time() + 0.1
+            else:
+                time.sleep(0.02)  # Small sleep to avoid busy waiting
+        
         return lines
 
     def send_command(self, command):
         with self.lock:
+            # Clear any stale data in the buffer first
+            while self.ser.in_waiting:
+                self.ser.read(self.ser.in_waiting)
+            
             self.ser.write((command + "\n").encode("utf-8"))
             self.ser.flush()
-            time.sleep(0.15)
-            return self._drain_serial()
+            
+            # Give Arduino time to process - longer for status command
+            if command == "status":
+                return self._drain_serial(timeout=0.8)
+            else:
+                return self._drain_serial(timeout=0.4)
 
     def close(self):
         if self.ser.is_open:
@@ -78,13 +94,15 @@ def handle_client(conn, addr, bridge):
                     continue
 
                 try:
+                    print(f"[{addr}] Sending to Arduino: '{cmd}'")
                     replies = bridge.send_command(cmd)
+                    print(f"[{addr}] Arduino replied: {replies}")
 
                     if replies:
                         for reply in replies:
                             conn.sendall((reply + "\n").encode("utf-8"))
                     else:
-                        conn.sendall(b"OK\n")
+                        conn.sendall(b"OK (no response from Arduino)\n")
 
                 except Exception as e:
                     conn.sendall(f"ERROR forwarding to Arduino: {e}\n".encode("utf-8"))
