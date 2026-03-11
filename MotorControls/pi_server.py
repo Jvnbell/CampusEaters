@@ -2,11 +2,18 @@ import socket
 import threading
 import time
 import serial
+import struct
+import io
 
 PI_HOST = "0.0.0.0"      # listen on all interfaces
 PI_PORT = 5000           # port laptop will connect to
+CAMERA_PORT = 5001       # port for camera streaming
 SERIAL_PORT = "/dev/ttyACM0"   # change if needed
 BAUDRATE = 115200
+
+# Camera setup - will be initialized on Pi
+camera = None
+camera_lock = threading.Lock()
 
 VALID_COMMANDS = {"f", "b", "s", "fr", "fl", "br", "bl", "status", "help", "?"}
 
@@ -55,6 +62,107 @@ class ArduinoBridge:
     def close(self):
         if self.ser.is_open:
             self.ser.close()
+
+
+def init_camera():
+    """Initialize the Pi camera. Returns None if not available."""
+    global camera
+    try:
+        from picamera2 import Picamera2
+        camera = Picamera2()
+        config = camera.create_preview_configuration(main={"size": (640, 480), "format": "RGB888"})
+        camera.configure(config)
+        camera.start()
+        time.sleep(1)  # Let camera warm up
+        print("[CAMERA] Picamera2 initialized successfully")
+        return camera
+    except ImportError:
+        print("[CAMERA] picamera2 not available, trying picamera...")
+        try:
+            import picamera
+            camera = picamera.PiCamera()
+            camera.resolution = (640, 480)
+            camera.framerate = 24
+            time.sleep(1)
+            print("[CAMERA] PiCamera initialized successfully")
+            return camera
+        except ImportError:
+            print("[CAMERA] No camera library available")
+            return None
+    except Exception as e:
+        print(f"[CAMERA] Failed to initialize: {e}")
+        return None
+
+
+def capture_frame_jpeg():
+    """Capture a single JPEG frame from the camera."""
+    global camera
+    if camera is None:
+        return None
+    
+    with camera_lock:
+        try:
+            # For picamera2
+            if hasattr(camera, 'capture_array'):
+                import cv2
+                frame = camera.capture_array()
+                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                return jpeg.tobytes()
+            # For legacy picamera
+            else:
+                stream = io.BytesIO()
+                camera.capture(stream, format='jpeg', use_video_port=True)
+                stream.seek(0)
+                return stream.read()
+        except Exception as e:
+            print(f"[CAMERA] Capture error: {e}")
+            return None
+
+
+def handle_camera_client(conn, addr):
+    """Stream camera frames to a connected client."""
+    print(f"[CAMERA] Client {addr} connected for video stream")
+    
+    try:
+        while True:
+            frame_data = capture_frame_jpeg()
+            if frame_data is None:
+                time.sleep(0.1)
+                continue
+            
+            # Send frame size (4 bytes) followed by frame data
+            size = len(frame_data)
+            conn.sendall(struct.pack('>I', size) + frame_data)
+            time.sleep(0.033)  # ~30 fps
+            
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+    except Exception as e:
+        print(f"[CAMERA] Stream error: {e}")
+    finally:
+        conn.close()
+        print(f"[CAMERA] Client {addr} disconnected")
+
+
+def start_camera_server():
+    """Start the camera streaming server on a separate port."""
+    init_camera()
+    
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((PI_HOST, CAMERA_PORT))
+    server.listen(2)
+    
+    print(f"[CAMERA] Streaming server listening on {PI_HOST}:{CAMERA_PORT}")
+    
+    while True:
+        try:
+            conn, addr = server.accept()
+            thread = threading.Thread(target=handle_camera_client, args=(conn, addr), daemon=True)
+            thread.start()
+        except Exception as e:
+            print(f"[CAMERA] Server error: {e}")
+            break
 
 
 def is_valid_command(cmd):
@@ -118,7 +226,12 @@ def handle_client(conn, addr, bridge):
 def start_server():
     bridge = ArduinoBridge(SERIAL_PORT, BAUDRATE)
 
+    # Start camera server in background thread
+    camera_thread = threading.Thread(target=start_camera_server, daemon=True)
+    camera_thread.start()
+
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((PI_HOST, PI_PORT))
     server.listen(5)
 
