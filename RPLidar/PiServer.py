@@ -21,7 +21,7 @@ def receive_camera_stream():
         print("[CAMERA] Connected to camera stream")
         
         while running:
-            # Read frame size (4 bytes, big-endian)
+            # Read frame size (4 bytes)
             size_data = b''
             while len(size_data) < 4:
                 chunk = cam_socket.recv(4 - len(size_data))
