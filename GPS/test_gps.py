@@ -2,6 +2,7 @@ import argparse
 import sys
 import time
 from dataclasses import dataclass
+from typing import Optional
 
 
 def _require_pyserial():
@@ -86,15 +87,21 @@ def _dm_to_decimal(dm: str, hemi: str):
 
 @dataclass
 class FixInfo:
-    lat: float | None = None
-    lon: float | None = None
-    fix_type: int | None = None  # GGA: 0 invalid, 1 GPS fix, 2 DGPS, ...
-    sats: int | None = None
-    speed_knots: float | None = None  # RMC
-    status: str | None = None  # RMC: A/V
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    fix_type: Optional[int] = None  # GGA: 0 invalid, 1 GPS fix, 2 DGPS, ...
+    sats: Optional[int] = None
+    hdop: Optional[float] = None  # GGA
+    altitude_m: Optional[float] = None  # GGA (MSL)
+    speed_knots: Optional[float] = None  # RMC
+    status: Optional[str] = None  # RMC: A/V
+    mode: Optional[str] = None  # RMC (NMEA 2.3+) or GSA: A/M
+    pdop: Optional[float] = None  # GSA
+    vdop: Optional[float] = None  # GSA
+    hdop_gsa: Optional[float] = None  # GSA
 
 
-def parse_nmea_fix(line: str) -> FixInfo | None:
+def parse_nmea_fix(line: str) -> Optional[FixInfo]:
     line = line.strip()
     if not line.startswith("$"):
         return None
@@ -119,7 +126,19 @@ def parse_nmea_fix(line: str) -> FixInfo | None:
             sats = int(parts[7]) if parts[7] else None
         except Exception:
             sats = None
-        return FixInfo(lat=lat, lon=lon, fix_type=fix_type, sats=sats)
+        # GGA fields (common): hdop at index 8, altitude at index 9
+        hdop = None
+        altitude_m = None
+        if len(parts) >= 10:
+            try:
+                hdop = float(parts[8]) if parts[8] else None
+            except Exception:
+                hdop = None
+            try:
+                altitude_m = float(parts[9]) if parts[9] else None
+            except Exception:
+                altitude_m = None
+        return FixInfo(lat=lat, lon=lon, fix_type=fix_type, sats=sats, hdop=hdop, altitude_m=altitude_m)
 
     # $--RMC: time, status(A/V), lat, N/S, lon, E/W, speed(knots), ...
     if msg_type == "RMC" and len(parts) >= 8:
@@ -130,7 +149,31 @@ def parse_nmea_fix(line: str) -> FixInfo | None:
             speed_knots = float(parts[7]) if parts[7] else None
         except Exception:
             speed_knots = None
-        return FixInfo(lat=lat, lon=lon, speed_knots=speed_knots, status=status)
+        # NMEA 2.3+ often includes mode indicator near the end (A/D/E/N/S)
+        mode = None
+        if len(parts) >= 13 and parts[12]:
+            mode = parts[12].upper()
+        elif len(parts) >= 14 and parts[13]:
+            mode = parts[13].upper()
+        return FixInfo(lat=lat, lon=lon, speed_knots=speed_knots, status=status, mode=mode)
+
+    # $--GSA: opMode(A/M), navMode(1/2/3), sat1..sat12, PDOP, HDOP, VDOP
+    if msg_type == "GSA" and len(parts) >= 17:
+        mode = parts[1].upper() if parts[1] else None
+        pdop = hdop = vdop = None
+        try:
+            pdop = float(parts[15]) if parts[15] else None
+        except Exception:
+            pdop = None
+        try:
+            hdop = float(parts[16]) if parts[16] else None
+        except Exception:
+            hdop = None
+        try:
+            vdop = float(parts[17]) if len(parts) >= 18 and parts[17] else None
+        except Exception:
+            vdop = None
+        return FixInfo(mode=mode, pdop=pdop, hdop_gsa=hdop, vdop=vdop)
 
     return None
 
@@ -181,10 +224,13 @@ def run_capture(port: str, baud: int, seconds: float, timeout_s: float, max_line
     ok_nmea = 0
     ok_checksum = 0
     total_lines = 0
-    last_fix: FixInfo | None = None
+    last_fix: Optional[FixInfo] = None
     sentence_counts: dict[str, int] = {}
     first_good_lines: list[str] = []
-    last_raw_line: str | None = None
+    last_raw_line: Optional[str] = None
+    last_gga_line: Optional[str] = None
+    last_rmc_line: Optional[str] = None
+    last_gsa_line: Optional[str] = None
 
     started = time.time()
     deadline = started + seconds
@@ -220,14 +266,23 @@ def run_capture(port: str, baud: int, seconds: float, timeout_s: float, max_line
                         if len(first_good_lines) < 5:
                             first_good_lines.append(line)
 
+                    # Keep last key sentences for troubleshooting
+                    star = line.find("*")
+                    core = line[1:star] if star != -1 else line[1:]
+                    msg = core.split(",", 1)[0].upper()
+                    msg_type = msg[-3:]
+                    if msg_type == "GGA":
+                        last_gga_line = line
+                    elif msg_type == "RMC":
+                        last_rmc_line = line
+                    elif msg_type == "GSA":
+                        last_gsa_line = line
+
                     fix = parse_nmea_fix(line)
                     if fix and (fix.lat is not None or fix.lon is not None or fix.fix_type is not None):
                         last_fix = fix
 
                     # Count sentence types ($GPRMC, $GNGGA, etc)
-                    star = line.find("*")
-                    core = line[1:star] if star != -1 else line[1:]
-                    msg = core.split(",", 1)[0].upper()
                     sentence_counts[msg] = sentence_counts.get(msg, 0) + 1
 
                 # Periodic lightweight progress
@@ -251,7 +306,72 @@ def run_capture(port: str, baud: int, seconds: float, timeout_s: float, max_line
         "first_good_lines": first_good_lines,
         "last_fix": last_fix,
         "last_raw_line": last_raw_line,
+        "last_gga_line": last_gga_line,
+        "last_rmc_line": last_rmc_line,
+        "last_gsa_line": last_gsa_line,
     }
+
+
+def run_coords(port: str, baud: int, timeout_s: float, *, once: bool) -> int:
+    """
+    Stream until we have a valid fix with lat/lon.
+    - once=True prints the first coordinate and exits.
+    - once=False prints updates as the position changes.
+    """
+    last_latlon = None
+    last_print_t = 0.0
+
+    try:
+        with open_serial(port, baud, timeout_s) as ser:
+            try:
+                ser.reset_input_buffer()
+            except Exception:
+                pass
+
+            print(f"Waiting for coordinates from {port} @ {baud} baud... (Ctrl-C to stop)")
+            while True:
+                raw = ser.readline()
+                if not raw:
+                    continue
+                try:
+                    line = raw.decode("ascii", errors="replace").strip()
+                except Exception:
+                    continue
+
+                if not is_probably_nmea_line(line) or not nmea_checksum_ok(line):
+                    continue
+
+                fix = parse_nmea_fix(line)
+                if fix is None:
+                    continue
+
+                has_fix = False
+                if fix.fix_type is not None and fix.fix_type >= 1:
+                    has_fix = True
+                if fix.status is not None and fix.status.upper() == "A":
+                    has_fix = True
+
+                if not has_fix or fix.lat is None or fix.lon is None:
+                    continue
+
+                latlon = (round(fix.lat, 6), round(fix.lon, 6))
+                now = time.time()
+
+                # Print on change, but also at most ~2Hz to be readable
+                if latlon != last_latlon and (now - last_print_t) >= 0.2:
+                    sats = "-" if fix.sats is None else str(fix.sats)
+                    hdop = "-" if fix.hdop is None else f"{fix.hdop:.2f}"
+                    ft = "-" if fix.fix_type is None else str(fix.fix_type)
+                    rmc = "-" if fix.status is None else fix.status
+                    print(f"{latlon[0]},{latlon[1]}  (fix={ft} sats={sats} hdop={hdop} rmc={rmc})")
+                    last_latlon = latlon
+                    last_print_t = now
+                    if once:
+                        return 0
+
+    except KeyboardInterrupt:
+        print("\nStopped.")
+        return 1
 
 
 def main():
@@ -269,6 +389,8 @@ def main():
     parser.add_argument("--seconds", type=float, default=15.0, help="How long to read (default: 15)")
     parser.add_argument("--timeout", type=float, default=0.5, help="Serial read timeout seconds (default: 0.5)")
     parser.add_argument("--max-lines", type=int, default=2000, help="Safety cap on read lines")
+    parser.add_argument("--coords", action="store_true", help="Print coordinates when available (waits for a fix)")
+    parser.add_argument("--once", action="store_true", help="With --coords: print first coordinate then exit")
     args = parser.parse_args()
 
     ports = list_serial_ports()
@@ -282,6 +404,9 @@ def main():
         return 0
 
     port = args.port or pick_port_interactively(ports)
+
+    if args.coords:
+        return run_coords(port=port, baud=args.baud, timeout_s=args.timeout, once=args.once)
 
     baud_candidates = [args.baud]
     if args.scan:
@@ -330,12 +455,40 @@ def main():
         print("")
         if fix.fix_type is not None:
             print(f"Last GGA fix_type: {fix.fix_type}  sats: {fix.sats}")
+            if fix.hdop is not None:
+                print(f"Last GGA HDOP: {fix.hdop}")
+            if fix.altitude_m is not None:
+                print(f"Last GGA altitude: {fix.altitude_m} m")
         if fix.status is not None:
             print(f"Last RMC status: {fix.status} (A=active, V=void)")
+            if fix.mode is not None:
+                print(f"Last RMC mode: {fix.mode}")
+        if fix.pdop is not None or fix.hdop_gsa is not None or fix.vdop is not None:
+            print(
+                "Last GSA DOP: "
+                + "  ".join(
+                    [
+                        f"PDOP={fix.pdop}" if fix.pdop is not None else "",
+                        f"HDOP={fix.hdop_gsa}" if fix.hdop_gsa is not None else "",
+                        f"VDOP={fix.vdop}" if fix.vdop is not None else "",
+                    ]
+                ).strip()
+            )
         if fix.lat is not None and fix.lon is not None:
             print(f"Last position: lat={fix.lat:.6f}, lon={fix.lon:.6f}")
         else:
             print("Last position: (not available yet)")
+
+        # Extra raw context when we're stuck at "no fix"
+        if fix.fix_type == 0:
+            print("")
+            print("Troubleshooting context (last raw sentences):")
+            if result.get("last_gga_line"):
+                print(f"  last GGA: {result['last_gga_line']}")
+            if result.get("last_rmc_line"):
+                print(f"  last RMC: {result['last_rmc_line']}")
+            if result.get("last_gsa_line"):
+                print(f"  last GSA: {result['last_gsa_line']}")
     else:
         print("")
         print("No valid NMEA detected.")
