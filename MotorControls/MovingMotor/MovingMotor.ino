@@ -33,9 +33,10 @@ volatile unsigned long lastRightTime = 0;
 volatile unsigned long leftInterval = 0;
 volatile unsigned long rightInterval = 0;
 
-// PI controller
-int integralError = 0;
-const int MAX_INTEGRAL = 500;
+// Rolling average instead of PI — survives resets gracefully
+const int HISTORY = 5;
+long diffHistory[HISTORY] = {0, 0, 0, 0, 0};
+int diffIndex = 0;
 
 unsigned long lastTime = 0;
 
@@ -94,12 +95,11 @@ void loop() {
       if ((now - lastRightTime) > 1000000) rInt = 0;
 
       // Spike filter — skip obviously bad readings
-      // (a diff over 50ms means a pulse landed on window boundary)
       if (lInt > 0 && rInt > 0 && abs((long)rInt - (long)lInt) > 50000) {
         Serial.print("L_us:"); Serial.print(lInt);
         Serial.print(" R_us:"); Serial.print(rInt);
         Serial.println(" (spike — skipping)");
-        return;  // don't update correction this cycle
+        return;
       }
 
       long diff = 0;
@@ -108,24 +108,33 @@ void loop() {
         if (abs(diff) < 3000) diff = 0;  // deadband — ignore noise under 3ms
       }
 
-      integralError += diff;
-      integralError = constrain(integralError, -MAX_INTEGRAL, MAX_INTEGRAL);
+      // Rolling average over last 5 readings
+      diffHistory[diffIndex % HISTORY] = diff;
+      diffIndex++;
 
-      float Kp = 0.003;
-      float Ki = 0.0002;
-      int correction = constrain((int)(Kp * diff + Ki * integralError), -20, 20);
+      long smoothDiff = 0;
+      for (int i = 0; i < HISTORY; i++) smoothDiff += diffHistory[i];
+      smoothDiff /= HISTORY;
 
+      float Kp = 0.004;
+      int correction = constrain((int)(Kp * smoothDiff), -20, 20);
+
+      // A = right motor, B = left motor
+      // Positive smoothDiff = right slower = speed up right, slow down left
       adjustedA = constrain(targetSpeedA + correction, 0, 255);  // right motor
       adjustedB = constrain(targetSpeedB - correction, 0, 255);  // left motor
 
       Serial.print("L_us:"); Serial.print(lInt);
       Serial.print(" R_us:"); Serial.print(rInt);
       Serial.print(" diff:"); Serial.print(diff);
+      Serial.print(" smooth:"); Serial.print(smoothDiff);
       Serial.print(" corr:"); Serial.print(correction);
       Serial.print(" A(R):"); Serial.print(adjustedA);
       Serial.print(" B(L):"); Serial.println(adjustedB);
     } else {
-      integralError = 0;
+      // Not going straight — reset history and targets
+      for (int i = 0; i < HISTORY; i++) diffHistory[i] = 0;
+      diffIndex = 0;
       adjustedA = targetSpeedA;
       adjustedB = targetSpeedB;
       Serial.println("(not moving straight — no correction)");
@@ -259,7 +268,8 @@ void stopMotors() {
   targetSpeedB = 0;
   adjustedA = 0;
   adjustedB = 0;
-  integralError = 0;
+  for (int i = 0; i < HISTORY; i++) diffHistory[i] = 0;
+  diffIndex = 0;
 }
 
 bool isNumber(String str) {
