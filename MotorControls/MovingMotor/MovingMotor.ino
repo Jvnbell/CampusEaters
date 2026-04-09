@@ -1,6 +1,9 @@
+#include <Wire.h>
+#include <MPU6050.h>
+
 const int IN1 = 5;
-const int IN2 = 4;
-const int ENA = 6;  // RIGHT motor
+const int IN2 = 6;
+const int ENA = 4;  // RIGHT motor
 const int IN3 = 8;
 const int IN4 = 7;
 const int ENB = 9;  // LEFT motor
@@ -21,24 +24,33 @@ String pendingAction = "";
 
 const int rampDelay = 10;
 const int FULL_SPEED = 200;
-const int TRIM_B = 0;
 
-// Encoder counts
-volatile int left_count = 0;
-volatile int right_count = 0;
+// ── Gyro ────────────────────────────────────────────────────
+MPU6050 mpu;
+int16_t gzOffset = 0;
+unsigned long lastGyroTime = 0;
+const float GYRO_KP = 2.0;        // tune this — start low
+const int MAX_GYRO_CORRECTION = 40; // max PWM nudge per cycle
 
-// Interval-based speed measurement (microseconds between pulses)
-volatile unsigned long lastLeftTime = 0;
-volatile unsigned long lastRightTime = 0;
-volatile unsigned long leftInterval = 0;
-volatile unsigned long rightInterval = 0;
+float heading = 0;
+float targetHeading = 0;
+unsigned long lastIntegrationTime = 0;
+// ────────────────────────────────────────────────────────────
 
-// Rolling average instead of PI — survives resets gracefully
-const int HISTORY = 5;
-long diffHistory[HISTORY] = {0, 0, 0, 0, 0};
-int diffIndex = 0;
-
-unsigned long lastTime = 0;
+void calibrateGyro() {
+  Serial.println("Calibrating gyro — keep bot still for 2 seconds...");
+  long sum = 0;
+  for (int i = 0; i < 200; i++) {
+    int16_t ax, ay, az, gx, gy, gz;
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    sum += gz;
+    delay(10);
+  }
+  gzOffset = sum / 200;
+  Serial.print("gZ offset: ");
+  Serial.println(gzOffset);
+  Serial.println("Calibration done.");
+}
 
 void setup() {
   pinMode(IN1, OUTPUT);
@@ -47,110 +59,115 @@ void setup() {
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
   pinMode(ENB, OUTPUT);
-  pinMode(2, INPUT_PULLUP);
-  pinMode(3, INPUT_PULLUP);
-
-  attachInterrupt(digitalPinToInterrupt(2), leftPulse, FALLING);
-  attachInterrupt(digitalPinToInterrupt(3), rightPulse, FALLING);
 
   Serial.begin(115200);
+
+  // Init gyro
+  Wire.begin();
+  mpu.initialize();
+  if (mpu.testConnection()) {
+    Serial.println("MPU6050 connected.");
+    calibrateGyro();
+  } else {
+    Serial.println("MPU6050 not found — running without gyro correction.");
+  }
+
   Serial.println("Motor Control Interface:");
   Serial.println("Direction Commands: f, b, s, fr, fl, br, bl");
   Serial.println("Speed Commands: 0-255");
-  Serial.println("Other: ?, help, status");
+  Serial.println("Other: ?, help, status, cal");
+  lastIntegrationTime = millis();
 
   setDirection(true, true);
   stopMotors();
 }
 
 void loop() {
-  // 1. Handle serial input
+  // ─────────────────────────────────────────────
+  // 1. Handle serial input (unchanged behavior)
+  // ─────────────────────────────────────────────
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
     input.trim();
     input.toLowerCase();
+
     if (input.length() > 0) {
       if (input == "status") printStatus();
+      else if (input == "cal") calibrateGyro();
       else handleCommand(input);
     }
   }
 
-  // 2. Compute correction every 500ms
-  bool movingStraight = (targetSpeedA > 0 && targetSpeedB > 0 && forwardA == forwardB);
+  // ─────────────────────────────────────────────
+  // 2. Update heading from gyro (continuous)
+  // ─────────────────────────────────────────────
+  unsigned long now = millis();
+  float dt = (now - lastIntegrationTime) / 1000.0;
+  lastIntegrationTime = now;
 
-  if (millis() - lastTime >= 500) {
-    lastTime = millis();
+  int16_t ax, ay, az, gx, gy, gz;
+  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
 
-    if (movingStraight) {
-      // Safely copy volatile values
-      unsigned long lInt, rInt;
-      noInterrupts();
-      lInt = leftInterval;
-      rInt = rightInterval;
-      interrupts();
+  float gzCorrected = gz - gzOffset;
 
-      // If no pulse in over 1 second, treat wheel as stopped
-      unsigned long now = micros();
-      if ((now - lastLeftTime) > 1000000) lInt = 0;
-      if ((now - lastRightTime) > 1000000) rInt = 0;
+  // Convert to deg/sec (MPU6050 ≈ 131 LSB per deg/sec)
+  float angularVelocity = gzCorrected / 131.0;
 
-      // Spike filter — skip obviously bad readings
-      if (lInt > 0 && rInt > 0 && abs((long)rInt - (long)lInt) > 50000) {
-        Serial.print("L_us:"); Serial.print(lInt);
-        Serial.print(" R_us:"); Serial.print(rInt);
-        Serial.println(" (spike — skipping)");
-        return;
-      }
+  // Integrate to get heading
+  heading += angularVelocity * dt;
 
-      long diff = 0;
-      if (lInt > 0 && rInt > 0) {
-        diff = (long)rInt - (long)lInt;
-        if (abs(diff) < 3000) diff = 0;  // deadband — ignore noise under 3ms
-      }
+  // ─────────────────────────────────────────────
+  // 3. Determine if we should apply correction
+  // ─────────────────────────────────────────────
+  bool movingStraight = (
+    targetSpeedA > 0 &&
+    targetSpeedB > 0 &&
+    forwardA == forwardB
+  );
 
-      // Rolling average over last 5 readings
-      diffHistory[diffIndex % HISTORY] = diff;
-      diffIndex++;
+  adjustedA = targetSpeedA;
+  adjustedB = targetSpeedB;
 
-      long smoothDiff = 0;
-      for (int i = 0; i < HISTORY; i++) smoothDiff += diffHistory[i];
-      smoothDiff /= HISTORY;
+  if (movingStraight) {
+    // Heading error (this is the IMPORTANT part)
+    float error = heading - targetHeading;
 
-      float Kp = 0.004;
-      int correction = constrain((int)(Kp * smoothDiff), -20, 20);
+    int correction = constrain(
+      (int)(GYRO_KP * error),
+      -MAX_GYRO_CORRECTION,
+       MAX_GYRO_CORRECTION
+    );
 
-      // A = right motor, B = left motor
-      // Positive smoothDiff = right slower = speed up right, slow down left
-      adjustedA = constrain(targetSpeedA + correction, 0, 255);  // right motor
-      adjustedB = constrain(targetSpeedB - correction, 0, 255);  // left motor
+    // Apply differential correction
+    adjustedA = constrain(targetSpeedA - correction, 0, 255); // RIGHT motor
+    adjustedB = constrain(targetSpeedB + correction, 0, 255); // LEFT motor
 
-      Serial.print("L_us:"); Serial.print(lInt);
-      Serial.print(" R_us:"); Serial.print(rInt);
-      Serial.print(" diff:"); Serial.print(diff);
-      Serial.print(" smooth:"); Serial.print(smoothDiff);
-      Serial.print(" corr:"); Serial.print(correction);
-      Serial.print(" A(R):"); Serial.print(adjustedA);
-      Serial.print(" B(L):"); Serial.println(adjustedB);
-    } else {
-      // Not going straight — reset history and targets
-      for (int i = 0; i < HISTORY; i++) diffHistory[i] = 0;
-      diffIndex = 0;
-      adjustedA = targetSpeedA;
-      adjustedB = targetSpeedB;
-      Serial.println("(not moving straight — no correction)");
-    }
+    // Debug output
+    Serial.print("H:"); Serial.print(heading);
+    Serial.print(" Err:"); Serial.print(error);
+    Serial.print(" Corr:"); Serial.print(correction);
+    Serial.print(" A(R):"); Serial.print(adjustedA);
+    Serial.print(" B(L):"); Serial.println(adjustedB);
   }
 
-  // 3. Ramp motors toward persistent adjusted targets
+  // ─────────────────────────────────────────────
+  // 4. Ramp motors smoothly
+  // ─────────────────────────────────────────────
   rampMotor(currentSpeedA, adjustedA, ENA);
   rampMotor(currentSpeedB, adjustedB, ENB);
 
-  // 4. Complete pending direction change once fully stopped
-  if (pendingDirectionChange && currentSpeedA == 0 && currentSpeedB == 0) {
+  // ─────────────────────────────────────────────
+  // 5. Handle safe direction switching
+  // ─────────────────────────────────────────────
+  if (pendingDirectionChange &&
+      currentSpeedA == 0 &&
+      currentSpeedB == 0) {
+
     setDirection(nextDirectionA, nextDirectionB);
     forwardA = nextDirectionA;
     forwardB = nextDirectionB;
     pendingDirectionChange = false;
+
     Serial.println("Direction switched safely.");
 
     if (pendingAction != "") {
@@ -163,7 +180,6 @@ void loop() {
 
   delay(rampDelay);
 }
-
 void handleCommand(String input) {
   if (input == "?" || input == "help") {
     Serial.println("Direction Commands: f, b, s, fr, fl, br, bl");
@@ -187,14 +203,9 @@ void handleCommand(String input) {
   } else if (isNumber(input)) {
     int val = constrain(input.toInt(), 0, 255);
     targetSpeedA = val;
-    targetSpeedB = constrain(val + TRIM_B, 0, 255);
-    adjustedA = targetSpeedA;
-    adjustedB = targetSpeedB;
+    targetSpeedB = val;
     Serial.print("Target speed set to: ");
-    Serial.print(val);
-    Serial.print(" (A="); Serial.print(adjustedA);
-    Serial.print(" B="); Serial.print(adjustedB);
-    Serial.println(")");
+    Serial.println(val);
   } else {
     Serial.print("Unknown command: ");
     Serial.println(input);
@@ -208,6 +219,9 @@ void rampMotor(int &currentSpeed, int targetSpeed, int pwmPin) {
 }
 
 void safeSetStraight(bool fwd, String command) {
+  heading = 0;
+  targetHeading = 0;
+  lastIntegrationTime = millis();
   if ((forwardA != fwd) || (forwardB != fwd)) {
     pendingDirectionChange = true;
     nextDirectionA = fwd;
@@ -215,14 +229,10 @@ void safeSetStraight(bool fwd, String command) {
     pendingAction = command;
     targetSpeedA = 0;
     targetSpeedB = 0;
-    adjustedA = 0;
-    adjustedB = 0;
     Serial.println("Safe reversal: slowing to 0 before switching direction...");
   } else {
     targetSpeedA = FULL_SPEED;
-    targetSpeedB = constrain(FULL_SPEED + TRIM_B, 0, 255);
-    adjustedA = targetSpeedA;
-    adjustedB = targetSpeedB;
+    targetSpeedB = FULL_SPEED;
     setDirection(fwd, fwd);
     Serial.print("Moving straight: ");
     Serial.println(fwd ? "Forward" : "Backward");
@@ -238,8 +248,6 @@ void safeMoveSharp(bool fwdA, bool fwdB, bool stopLeft, String command) {
     pendingAction = command;
     targetSpeedA = 0;
     targetSpeedB = 0;
-    adjustedA = 0;
-    adjustedB = 0;
     Serial.println("Safe reversal: slowing to 0 before switching direction...");
   } else {
     setDirection(fwdA, fwdB);
@@ -250,8 +258,6 @@ void safeMoveSharp(bool fwdA, bool fwdB, bool stopLeft, String command) {
       targetSpeedA = FULL_SPEED;
       targetSpeedB = 0;
     }
-    adjustedA = targetSpeedA;
-    adjustedB = targetSpeedB;
   }
 }
 
@@ -268,8 +274,6 @@ void stopMotors() {
   targetSpeedB = 0;
   adjustedA = 0;
   adjustedB = 0;
-  for (int i = 0; i < HISTORY; i++) diffHistory[i] = 0;
-  diffIndex = 0;
 }
 
 bool isNumber(String str) {
@@ -277,20 +281,6 @@ bool isNumber(String str) {
   for (unsigned int i = 0; i < str.length(); i++)
     if (!isDigit(str.charAt(i))) return false;
   return true;
-}
-
-void leftPulse() {
-  unsigned long now = micros();
-  leftInterval = now - lastLeftTime;
-  lastLeftTime = now;
-  left_count++;
-}
-
-void rightPulse() {
-  unsigned long now = micros();
-  rightInterval = now - lastRightTime;
-  lastRightTime = now;
-  right_count++;
 }
 
 void printStatus() {
@@ -305,7 +295,9 @@ void printStatus() {
   else Serial.print(forwardB ? "Forward" : "Backward");
   Serial.print(" | Speed: "); Serial.println(currentSpeedB);
 
+  Serial.print("Gyro offset: "); Serial.println(gzOffset);
+
   if (pendingDirectionChange)
-    Serial.println("  Pending direction change in progress...");
+    Serial.println("Pending direction change in progress...");
   Serial.println("====================");
 }
