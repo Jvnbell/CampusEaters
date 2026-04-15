@@ -1,7 +1,28 @@
+import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
 import { getAuthUserAndProfile, unauthorized, forbidden } from '@/lib/api-auth';
+import { getAuthUser } from '@/lib/supabase/server';
+
+function namesFromSupabaseMetadata(
+  email: string,
+  metadata: Record<string, unknown> | null | undefined,
+): { firstName: string; lastName: string } {
+  const meta = metadata ?? {};
+  let firstName = String(meta.first_name ?? meta.firstName ?? '').trim();
+  let lastName = String(meta.last_name ?? meta.lastName ?? '').trim();
+  const full = String(meta.full_name ?? meta.name ?? '').trim();
+  if ((!firstName || !lastName) && full) {
+    const parts = full.split(/\s+/).filter(Boolean);
+    if (!firstName && parts.length) firstName = parts[0]!;
+    if (!lastName && parts.length > 1) lastName = parts.slice(1).join(' ');
+  }
+  const local = email.split('@')[0] ?? 'user';
+  if (!firstName) firstName = local;
+  if (!lastName) lastName = 'User';
+  return { firstName, lastName };
+}
 
 export async function GET(request: Request) {
   try {
@@ -18,8 +39,11 @@ export async function GET(request: Request) {
         return forbidden('You can only view your own profile.');
       }
 
-      const user = await prisma.user.findUnique({
-        where: { email },
+      // Use session email for own profile so lookup matches the row Prisma stores (avoids case mismatches).
+      const lookupEmail = isOwnProfile ? auth.authUser.email : email;
+
+      let user = await prisma.user.findUnique({
+        where: { email: lookupEmail },
         select: {
           id: true,
           firstName: true,
@@ -30,6 +54,59 @@ export async function GET(request: Request) {
           restaurantId: true,
         },
       });
+
+      // Supabase account exists but app DB row was never created (e.g. signup before email confirm skipped POST /api/users).
+      if (!user && isOwnProfile) {
+        const supabaseUser = await getAuthUser();
+        if (
+          supabaseUser?.email &&
+          supabaseUser.email.toLowerCase() === auth.authUser.email.toLowerCase()
+        ) {
+          const { firstName, lastName } = namesFromSupabaseMetadata(
+            supabaseUser.email,
+            supabaseUser.user_metadata as Record<string, unknown> | undefined,
+          );
+          try {
+            user = await prisma.user.create({
+              data: {
+                email: supabaseUser.email,
+                firstName,
+                lastName,
+                role: 'USER',
+              },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phoneNumber: true,
+                role: true,
+                restaurantId: true,
+              },
+            });
+          } catch (createError) {
+            if (
+              createError instanceof Prisma.PrismaClientKnownRequestError &&
+              createError.code === 'P2002'
+            ) {
+              user = await prisma.user.findUnique({
+                where: { email: supabaseUser.email },
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  phoneNumber: true,
+                  role: true,
+                  restaurantId: true,
+                },
+              });
+            } else {
+              throw createError;
+            }
+          }
+        }
+      }
 
       if (!user) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
