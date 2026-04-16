@@ -1,7 +1,5 @@
 'use client';
 
-'use client';
-
 import { useEffect, useMemo, useState } from 'react';
 import { Package } from 'lucide-react';
 import { toast } from 'sonner';
@@ -50,7 +48,7 @@ const DeliveryRequest = () => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const restaurantsResponse = await fetch('/api/restaurants');
+        const restaurantsResponse = await fetch('/api/restaurants', { cache: 'no-store' });
 
         if (!restaurantsResponse.ok) {
           throw new Error('Failed to load restaurants');
@@ -160,6 +158,29 @@ const DeliveryRequest = () => {
     setIsSubmitting(true);
 
     try {
+      const freshResponse = await fetch('/api/restaurants', { cache: 'no-store' });
+      if (!freshResponse.ok) {
+        throw new Error('Failed to refresh restaurant menu');
+      }
+      const freshData = (await freshResponse.json()) as { restaurants: RestaurantOption[] };
+      const freshRestaurant = freshData.restaurants.find((r) => r.id === restaurantId);
+      if (!freshRestaurant) {
+        toast.error('That restaurant is no longer available. Refresh the page and pick again.');
+        setRestaurants(freshData.restaurants);
+        setRestaurantId('');
+        setSelectedItems({});
+        return;
+      }
+      const validMenuIds = new Set(freshRestaurant.menuItems.map((item) => item.id));
+      const selectedIds = Object.keys(selectedItems);
+      const unknown = selectedIds.filter((id) => !validMenuIds.has(id));
+      if (unknown.length > 0) {
+        toast.error('Menu data was out of date; updating your list. Please select your items again.');
+        setRestaurants(freshData.restaurants);
+        setSelectedItems({});
+        return;
+      }
+
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: {
@@ -177,7 +198,12 @@ const DeliveryRequest = () => {
       });
 
       if (!response.ok) {
-        const errorBody = await response.json();
+        const errorBody = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          code?: string;
+          missingMenuItemIds?: string[];
+        };
+        console.error('[DeliveryRequest] Order rejected', errorBody);
         throw new Error(errorBody.error ?? 'Failed to submit order');
       }
 

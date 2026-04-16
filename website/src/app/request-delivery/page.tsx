@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
+import { AdminCatalogHealthBannerGate } from '@/components/AdminCatalogHealthBannerGate';
 import DeliveryRequest from '@/components/DeliveryRequest';
 import { AuthGate } from '@/components/auth/AuthGate';
 import { Button } from '@/components/ui/button';
@@ -45,6 +46,7 @@ export default function RequestDeliveryPage() {
             title="Sign in to request a delivery"
             description="CampusEats deliveries are available to authenticated UT students and staff. Sign in with your campus email to get started."
           >
+            <AdminCatalogHealthBannerGate />
             <DeliveryRequest />
           </AuthGate>
         </div>

@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
@@ -25,6 +26,15 @@ const generateOrderNumber = async () => {
   return nextNumber;
 };
 
+/** Combine duplicate menu lines (same id) into one row with summed quantity. */
+const mergeLineItems = (items: Array<{ menuItemId: string; quantity: number }>) => {
+  const map = new Map<string, number>();
+  for (const { menuItemId, quantity } of items) {
+    map.set(menuItemId, (map.get(menuItemId) ?? 0) + quantity);
+  }
+  return [...map.entries()].map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
+};
+
 export async function POST(request: Request) {
   try {
     const auth = await getAuthUserAndProfile();
@@ -38,34 +48,64 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as CreateOrderBody;
 
-    if (
-      !body.restaurantId ||
-      !body.deliveryLocation ||
-      !Array.isArray(body.items) ||
-      body.items.length === 0
-    ) {
+    const restaurantId = String(body.restaurantId ?? '').trim();
+    const deliveryLocation =
+      typeof body.deliveryLocation === 'string'
+        ? body.deliveryLocation.trim()
+        : String(body.deliveryLocation ?? '').trim();
+
+    if (!restaurantId || !deliveryLocation || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json(
-        { error: 'Missing required fields: restaurantId, deliveryLocation, and at least one item.' },
+        {
+          error:
+            'Missing required fields: restaurantId, deliveryLocation, and at least one item. Delivery location cannot be blank.',
+          code: 'INVALID_BODY',
+        },
         { status: 400 },
       );
     }
 
-    const sanitizedItems = body.items
-      .filter((item) => item.menuItemId && item.quantity > 0)
-      .map((item) => ({
-        menuItemId: item.menuItemId,
-        quantity: item.quantity,
-      }));
+    const sanitizedItems = mergeLineItems(
+      body.items
+        .map((item) => ({
+          menuItemId: String(item?.menuItemId ?? '').trim(),
+          quantity: Number(item?.quantity),
+        }))
+        .filter((item) => item.menuItemId.length > 0 && Number.isFinite(item.quantity) && item.quantity > 0),
+    );
 
     if (sanitizedItems.length === 0) {
-      return NextResponse.json({ error: 'No valid menu items were provided.' }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: 'No valid menu items were provided. Select at least one item with quantity ≥ 1.',
+          code: 'NO_LINE_ITEMS',
+        },
+        { status: 400 },
+      );
     }
 
-    // Ensure all menu items belong to the selected restaurant
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { id: true },
+    });
+    if (!restaurant) {
+      return NextResponse.json(
+        {
+          error: 'Invalid restaurant. Refresh the page and select a restaurant again.',
+          code: 'RESTAURANT_NOT_FOUND',
+          restaurantId,
+        },
+        { status: 400 },
+      );
+    }
+
+    const requestedMenuIds = [...new Set(sanitizedItems.map((item) => item.menuItemId))];
+
     const menuItems = await prisma.menuItem.findMany({
       where: {
+        restaurantId,
         id: {
-          in: sanitizedItems.map((item) => item.menuItemId),
+          in: requestedMenuIds,
         },
       },
       select: {
@@ -74,9 +114,24 @@ export async function POST(request: Request) {
       },
     });
 
-    const invalidItem = menuItems.find((item) => item.restaurantId !== body.restaurantId);
-    if (invalidItem) {
-      return NextResponse.json({ error: 'Menu items must belong to the selected restaurant.' }, { status: 400 });
+    if (menuItems.length !== requestedMenuIds.length) {
+      const foundIds = new Set(menuItems.map((m) => m.id));
+      const missingMenuItemIds = requestedMenuIds.filter((id) => !foundIds.has(id));
+      console.warn('[API /orders POST] Menu items not found for restaurant', {
+        restaurantId,
+        missingMenuItemIds,
+        requestedCount: requestedMenuIds.length,
+        foundCount: menuItems.length,
+      });
+      return NextResponse.json(
+        {
+          error:
+            'One or more menu items are invalid or no longer available. Run `npx prisma db seed` in /website if the database was empty, then refresh and try again.',
+          code: 'MENU_ITEMS_NOT_FOUND',
+          missingMenuItemIds,
+        },
+        { status: 400 },
+      );
     }
 
     const orderNumber = await generateOrderNumber();
@@ -84,9 +139,9 @@ export async function POST(request: Request) {
     const order = await prisma.order.create({
       data: {
         orderNumber,
-        restaurantId: body.restaurantId,
+        restaurantId,
         userId: auth.profile.id,
-        deliveryLocation: body.deliveryLocation,
+        deliveryLocation,
         orderItems: {
           create: sanitizedItems.map((item) => ({
             menuItemId: item.menuItemId,
@@ -134,6 +189,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ order }, { status: 201 });
   } catch (error) {
     console.error('Failed to create order', error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2003') {
+        return NextResponse.json(
+          {
+            error:
+              'Could not place order because the restaurant or menu data is out of date. Refresh the page and try again.',
+            code: 'FOREIGN_KEY',
+          },
+          { status: 400 },
+        );
+      }
+      if (error.code === 'P2002') {
+        return NextResponse.json(
+          {
+            error: 'Duplicate menu line on this order. Refresh the page and try again.',
+            code: 'DUPLICATE_LINE_ITEM',
+          },
+          { status: 400 },
+        );
+      }
+    }
     return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
   }
 }

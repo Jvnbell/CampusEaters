@@ -15,6 +15,7 @@ import {
   Sparkle,
 } from 'lucide-react';
 
+import { AdminCatalogHealthBanner } from '@/components/AdminCatalogHealthBanner';
 import { Button } from '@/components/ui/button';
 import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
 import { useCurrentProfile, type UserProfile } from '@/hooks/use-current-profile';
@@ -402,7 +403,16 @@ const AuthenticatedHome = ({ profile }: { profile: UserProfile | null }) => {
     return <RestaurantHome profile={profile} />;
   }
 
-  return <UserHome profile={profile} />;
+  return (
+    <>
+      {profile?.role === 'ADMIN' ? (
+        <div className="container mx-auto max-w-4xl px-4 pt-8">
+          <AdminCatalogHealthBanner />
+        </div>
+      ) : null}
+      <UserHome profile={profile} />
+    </>
+  );
 };
 
 export const HomeContent = () => {

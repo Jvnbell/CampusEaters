@@ -12,6 +12,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "prisma db seed",
+    "db:reset": "SEED_USER_COUNT=0 prisma migrate reset --force",
     "script:order-load": "tsx scripts/order-load.ts"
   },
   "prisma": {
