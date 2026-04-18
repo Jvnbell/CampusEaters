@@ -1,15 +1,25 @@
 import { NextResponse } from 'next/server';
 
-import { prisma } from '@/lib/prisma';
+import { forbidden, getAuthUserAndProfile, unauthorized } from '@/lib/api-auth';
+import { mapOrderWithRelations } from '@/lib/db/mappers';
 import { sendOrderStatusEmail } from '@/lib/email';
-import { getAuthUserAndProfile, unauthorized, forbidden } from '@/lib/api-auth';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import type { OrderStatus } from '@/types/db';
 
-const VALID_STATUSES = ['SENT', 'RECEIVED', 'SHIPPING', 'DELIVERED'] as const;
+const VALID_STATUSES: OrderStatus[] = ['SENT', 'RECEIVED', 'SHIPPING', 'DELIVERED'];
 
 type UpdatePayload = {
-  status?: (typeof VALID_STATUSES)[number];
+  status?: OrderStatus;
   botId?: string | null;
 };
+
+const ORDER_WITH_RELATIONS_SELECT = `
+  id, order_number, user_id, restaurant_id, bot_id, delivery_location, status, placed_at, updated_at,
+  restaurant:restaurants(name, location),
+  user:users(id, first_name, last_name, email),
+  bot:bots(id, primary_location),
+  order_items(id, quantity, menu_item:menu_items(name, price))
+`;
 
 export async function PATCH(
   request: Request,
@@ -38,8 +48,6 @@ export async function PATCH(
     return forbidden('Only restaurant staff or administrators can update order status.');
   }
 
-  console.log(`[API] Updating order ${orderId}`);
-
   const body = (await request.json()) as UpdatePayload;
 
   if (!body.status && body.botId === undefined) {
@@ -51,107 +59,62 @@ export async function PATCH(
   }
 
   try {
-    const currentOrder = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: {
-        status: true,
-        orderNumber: true,
-        restaurantId: true,
-        deliveryLocation: true,
-        user: {
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        },
-        restaurant: {
-          select: {
-            name: true,
-          },
-        },
-      },
-    });
+    const { data: existing, error: fetchError } = await supabaseAdmin
+      .from('orders')
+      .select('id, status, restaurant_id')
+      .eq('id', orderId)
+      .maybeSingle();
 
-    if (!currentOrder) {
+    if (fetchError) {
+      console.error('[API /orders/id PATCH] Lookup failed', fetchError);
+      return NextResponse.json({ error: 'Failed to load order' }, { status: 500 });
+    }
+    if (!existing) {
       return NextResponse.json({ error: 'Order not found.' }, { status: 404 });
     }
 
-    if (isRestaurant && currentOrder.restaurantId !== auth.profile.restaurantId) {
+    if (isRestaurant && existing.restaurant_id !== auth.profile.restaurantId) {
       return forbidden('You can only update orders for your own restaurant.');
     }
 
-    const statusChanged = body.status && body.status !== currentOrder.status;
-    
-    console.log(`[API] Current status: ${currentOrder.status}, New status: ${body.status}, Changed: ${statusChanged}`);
+    const statusChanged = !!body.status && body.status !== existing.status;
 
-    const updateData: { status?: string; botId?: string | null } = {};
-    if (body.status !== undefined) {
-      updateData.status = body.status;
+    const updatePayload: { status?: OrderStatus; bot_id?: string | null } = {};
+    if (body.status !== undefined) updatePayload.status = body.status;
+    if (body.botId !== undefined) updatePayload.bot_id = body.botId;
+
+    const { data: updatedRow, error: updateError } = await supabaseAdmin
+      .from('orders')
+      .update(updatePayload)
+      .eq('id', orderId)
+      .select(ORDER_WITH_RELATIONS_SELECT)
+      .single();
+
+    if (updateError || !updatedRow) {
+      console.error('[API /orders/id PATCH] Update failed', updateError);
+      return NextResponse.json({ error: 'Failed to update order.' }, { status: 500 });
     }
-    if (body.botId !== undefined) {
-      updateData.botId = body.botId;
-    }
 
-    console.log(`[API] Update data:`, updateData);
+    const order = mapOrderWithRelations(
+      updatedRow as Parameters<typeof mapOrderWithRelations>[0],
+    );
 
-    const updatedOrder = await prisma.order.update({
-      where: { id: orderId },
-      data: updateData,
-      include: {
-        orderItems: {
-          select: {
-            id: true,
-            quantity: true,
-            menuItem: {
-              select: {
-                name: true,
-                price: true,
-              },
-            },
-          },
-        },
-        user: {
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        },
-        restaurant: {
-          select: {
-            name: true,
-          },
-        },
-      },
-    });
-    
-    console.log(`[API] Order updated successfully. Order #${updatedOrder.orderNumber} status is now: ${updatedOrder.status}`);
-
-    // Send email notification if status changed
-    if (statusChanged && body.status && updatedOrder.user && updatedOrder.restaurant) {
+    if (statusChanged && body.status && order.user) {
       console.log('[API /orders/id PATCH] Sending status update email...');
       await sendOrderStatusEmail({
-        userEmail: updatedOrder.user.email,
-        userName: `${updatedOrder.user.firstName} ${updatedOrder.user.lastName}`,
-        orderNumber: updatedOrder.orderNumber,
+        userEmail: order.user.email,
+        userName: `${order.user.firstName} ${order.user.lastName}`,
+        orderNumber: order.orderNumber,
         status: body.status,
-        restaurantName: updatedOrder.restaurant.name,
-        deliveryLocation: updatedOrder.deliveryLocation,
+        restaurantName: order.restaurant.name,
+        deliveryLocation: order.deliveryLocation,
       });
       console.log('[API /orders/id PATCH] Email notification sent');
-    } else if (body.status && !statusChanged) {
-      console.log('[API /orders/id PATCH] Status unchanged, skipping email');
-    } else {
-      console.log('[API /orders/id PATCH] No status change or missing data, skipping email');
     }
 
-    return NextResponse.json({ order: updatedOrder });
+    return NextResponse.json({ order });
   } catch (error) {
     console.error('Failed to update order', error);
     return NextResponse.json({ error: 'Failed to update order.' }, { status: 500 });
   }
 }
-
-
-

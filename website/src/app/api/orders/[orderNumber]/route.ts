@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server';
 
-import { prisma } from '@/lib/prisma';
-import { getAuthUserAndProfile, unauthorized, forbidden } from '@/lib/api-auth';
+import { forbidden, getAuthUserAndProfile, unauthorized } from '@/lib/api-auth';
+import { mapOrderWithRelations } from '@/lib/db/mappers';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+
+const ORDER_WITH_RELATIONS_SELECT = `
+  id, order_number, user_id, restaurant_id, bot_id, delivery_location, status, placed_at, updated_at,
+  restaurant:restaurants(name, location),
+  user:users(id, first_name, last_name, email),
+  bot:bots(id, primary_location),
+  order_items(id, quantity, menu_item:menu_items(name, price))
+`;
 
 export async function GET(
   _request: Request,
@@ -24,47 +33,21 @@ export async function GET(
   }
 
   try {
-    const order = await prisma.order.findUnique({
-      where: { orderNumber },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        },
-        restaurant: {
-          select: {
-            name: true,
-            location: true,
-          },
-        },
-        orderItems: {
-          select: {
-            id: true,
-            quantity: true,
-            menuItem: {
-              select: {
-                name: true,
-                price: true,
-              },
-            },
-          },
-        },
-        bot: {
-          select: {
-            id: true,
-            primaryLocation: true,
-          },
-        },
-      },
-    });
+    const { data, error } = await supabaseAdmin
+      .from('orders')
+      .select(ORDER_WITH_RELATIONS_SELECT)
+      .eq('order_number', orderNumber)
+      .maybeSingle();
 
-    if (!order) {
+    if (error) {
+      console.error('[API /orders/[orderNumber] GET] Query failed', error);
+      return NextResponse.json({ error: 'Failed to fetch order' }, { status: 500 });
+    }
+    if (!data) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
+
+    const order = mapOrderWithRelations(data as Parameters<typeof mapOrderWithRelations>[0]);
 
     const isOwner = order.userId === auth.profile.id;
     const isAdmin = auth.profile.role === 'ADMIN';
@@ -80,5 +63,3 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to fetch order' }, { status: 500 });
   }
 }
-
-

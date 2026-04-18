@@ -1,9 +1,9 @@
-import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 
-import { prisma } from '@/lib/prisma';
-import { sendOrderStatusEmail } from '@/lib/email';
 import { getAuthUserAndProfile, unauthorized } from '@/lib/api-auth';
+import { mapOrderWithRelations } from '@/lib/db/mappers';
+import { sendOrderStatusEmail } from '@/lib/email';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 
 type CreateOrderBody = {
   restaurantId: string;
@@ -15,25 +15,23 @@ type CreateOrderBody = {
   }>;
 };
 
-const generateOrderNumber = async () => {
-  const aggregate = await prisma.order.aggregate({
-    _max: {
-      orderNumber: true,
-    },
-  });
-
-  const nextNumber = (aggregate._max.orderNumber ?? 1000) + 1;
-  return nextNumber;
-};
+const ORDER_WITH_RELATIONS_SELECT = `
+  id, order_number, user_id, restaurant_id, bot_id, delivery_location, status, placed_at, updated_at,
+  restaurant:restaurants(name, location),
+  user:users(id, first_name, last_name, email),
+  order_items(id, quantity, menu_item:menu_items(name, price))
+`;
 
 /** Combine duplicate menu lines (same id) into one row with summed quantity. */
-const mergeLineItems = (items: Array<{ menuItemId: string; quantity: number }>) => {
+function mergeLineItems(
+  items: Array<{ menuItemId: string; quantity: number }>,
+): Array<{ menuItemId: string; quantity: number }> {
   const map = new Map<string, number>();
   for (const { menuItemId, quantity } of items) {
     map.set(menuItemId, (map.get(menuItemId) ?? 0) + quantity);
   }
-  return [...map.entries()].map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
-};
+  return Array.from(map.entries()).map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
+}
 
 export async function POST(request: Request) {
   try {
@@ -54,7 +52,12 @@ export async function POST(request: Request) {
         ? body.deliveryLocation.trim()
         : String(body.deliveryLocation ?? '').trim();
 
-    if (!restaurantId || !deliveryLocation || !Array.isArray(body.items) || body.items.length === 0) {
+    if (
+      !restaurantId ||
+      !deliveryLocation ||
+      !Array.isArray(body.items) ||
+      body.items.length === 0
+    ) {
       return NextResponse.json(
         {
           error:
@@ -71,7 +74,10 @@ export async function POST(request: Request) {
           menuItemId: String(item?.menuItemId ?? '').trim(),
           quantity: Number(item?.quantity),
         }))
-        .filter((item) => item.menuItemId.length > 0 && Number.isFinite(item.quantity) && item.quantity > 0),
+        .filter(
+          (item) =>
+            item.menuItemId.length > 0 && Number.isFinite(item.quantity) && item.quantity > 0,
+        ),
     );
 
     if (sanitizedItems.length === 0) {
@@ -84,10 +90,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const restaurant = await prisma.restaurant.findUnique({
-      where: { id: restaurantId },
-      select: { id: true },
-    });
+    const { data: restaurant, error: restaurantError } = await supabaseAdmin
+      .from('restaurants')
+      .select('id')
+      .eq('id', restaurantId)
+      .maybeSingle();
+
+    if (restaurantError) {
+      console.error('[API /orders POST] Restaurant lookup failed', restaurantError);
+      return NextResponse.json({ error: 'Failed to validate restaurant' }, { status: 500 });
+    }
     if (!restaurant) {
       return NextResponse.json(
         {
@@ -99,34 +111,34 @@ export async function POST(request: Request) {
       );
     }
 
-    const requestedMenuIds = [...new Set(sanitizedItems.map((item) => item.menuItemId))];
+    const requestedMenuIds = Array.from(
+      new Set(sanitizedItems.map((item) => item.menuItemId)),
+    );
 
-    const menuItems = await prisma.menuItem.findMany({
-      where: {
-        restaurantId,
-        id: {
-          in: requestedMenuIds,
-        },
-      },
-      select: {
-        id: true,
-        restaurantId: true,
-      },
-    });
+    const { data: foundMenuItems, error: menuError } = await supabaseAdmin
+      .from('menu_items')
+      .select('id, restaurant_id')
+      .eq('restaurant_id', restaurantId)
+      .in('id', requestedMenuIds);
 
-    if (menuItems.length !== requestedMenuIds.length) {
-      const foundIds = new Set(menuItems.map((m) => m.id));
+    if (menuError) {
+      console.error('[API /orders POST] Menu lookup failed', menuError);
+      return NextResponse.json({ error: 'Failed to validate menu items' }, { status: 500 });
+    }
+
+    if ((foundMenuItems ?? []).length !== requestedMenuIds.length) {
+      const foundIds = new Set((foundMenuItems ?? []).map((m) => m.id));
       const missingMenuItemIds = requestedMenuIds.filter((id) => !foundIds.has(id));
       console.warn('[API /orders POST] Menu items not found for restaurant', {
         restaurantId,
         missingMenuItemIds,
         requestedCount: requestedMenuIds.length,
-        foundCount: menuItems.length,
+        foundCount: (foundMenuItems ?? []).length,
       });
       return NextResponse.json(
         {
           error:
-            'One or more menu items are invalid or no longer available. Run `npx prisma db seed` in /website if the database was empty, then refresh and try again.',
+            'One or more menu items are invalid or no longer available. Re-seed the catalog (npm run db:seed) and refresh the page, then try again.',
           code: 'MENU_ITEMS_NOT_FOUND',
           missingMenuItemIds,
         },
@@ -134,44 +146,57 @@ export async function POST(request: Request) {
       );
     }
 
-    const orderNumber = await generateOrderNumber();
-
-    const order = await prisma.order.create({
-      data: {
-        orderNumber,
-        restaurantId,
-        userId: auth.profile.id,
-        deliveryLocation,
-        orderItems: {
-          create: sanitizedItems.map((item) => ({
-            menuItemId: item.menuItemId,
-            quantity: item.quantity,
-          })),
-        },
-      },
-      include: {
-        orderItems: {
-          include: {
-            menuItem: true,
-          },
-        },
-        user: {
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        },
-        restaurant: {
-          select: {
-            name: true,
-          },
-        },
-      },
+    const { data: created, error: createError } = await supabaseAdmin.rpc('create_order', {
+      p_user_id: auth.profile.id,
+      p_restaurant_id: restaurantId,
+      p_delivery_location: deliveryLocation,
+      p_items: sanitizedItems.map((item) => ({
+        menu_item_id: item.menuItemId,
+        quantity: item.quantity,
+      })),
     });
 
-    // Send email notification when order is created (status is SENT by default)
-    if (order.user && order.restaurant) {
+    if (createError || !created) {
+      console.error('[API /orders POST] create_order RPC failed', createError);
+      // 23503 = foreign key, 23505 = unique
+      if (createError?.code === '23503') {
+        return NextResponse.json(
+          {
+            error:
+              'Could not place order because the restaurant or menu data is out of date. Refresh the page and try again.',
+            code: 'FOREIGN_KEY',
+          },
+          { status: 400 },
+        );
+      }
+      if (createError?.code === '23505') {
+        return NextResponse.json(
+          {
+            error: 'Duplicate menu line on this order. Refresh the page and try again.',
+            code: 'DUPLICATE_LINE_ITEM',
+          },
+          { status: 400 },
+        );
+      }
+      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
+    }
+
+    const newOrderId = (created as { id: string }).id;
+
+    const { data: orderRow, error: fetchError } = await supabaseAdmin
+      .from('orders')
+      .select(ORDER_WITH_RELATIONS_SELECT)
+      .eq('id', newOrderId)
+      .single();
+
+    if (fetchError || !orderRow) {
+      console.error('[API /orders POST] Failed to load created order', fetchError);
+      return NextResponse.json({ error: 'Order created but could not load it' }, { status: 500 });
+    }
+
+    const order = mapOrderWithRelations(orderRow as Parameters<typeof mapOrderWithRelations>[0]);
+
+    if (order.user) {
       console.log('[API /orders POST] Sending order confirmation email...');
       await sendOrderStatusEmail({
         userEmail: order.user.email,
@@ -182,39 +207,16 @@ export async function POST(request: Request) {
         deliveryLocation: order.deliveryLocation,
       });
       console.log('[API /orders POST] Email notification sent');
-    } else {
-      console.warn('[API /orders POST] Cannot send email - missing user or restaurant data');
     }
 
     return NextResponse.json({ order }, { status: 201 });
   } catch (error) {
     console.error('Failed to create order', error);
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2003') {
-        return NextResponse.json(
-          {
-            error:
-              'Could not place order because the restaurant or menu data is out of date. Refresh the page and try again.',
-            code: 'FOREIGN_KEY',
-          },
-          { status: 400 },
-        );
-      }
-      if (error.code === 'P2002') {
-        return NextResponse.json(
-          {
-            error: 'Duplicate menu line on this order. Refresh the page and try again.',
-            code: 'DUPLICATE_LINE_ITEM',
-          },
-          { status: 400 },
-        );
-      }
-    }
     return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
   }
 }
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const auth = await getAuthUserAndProfile();
     if (!auth) return unauthorized();
@@ -225,32 +227,20 @@ export async function GET(request: Request) {
       );
     }
 
-    const orders = await prisma.order.findMany({
-      where: { userId: auth.profile.id },
-      include: {
-        restaurant: {
-          select: {
-            name: true,
-            location: true,
-          },
-        },
-        orderItems: {
-          select: {
-            id: true,
-            quantity: true,
-            menuItem: {
-              select: {
-                name: true,
-                price: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        placedAt: 'desc',
-      },
-    });
+    const { data, error } = await supabaseAdmin
+      .from('orders')
+      .select(ORDER_WITH_RELATIONS_SELECT)
+      .eq('user_id', auth.profile.id)
+      .order('placed_at', { ascending: false });
+
+    if (error) {
+      console.error('[API /orders GET] Query failed', error);
+      return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 });
+    }
+
+    const orders = (data ?? []).map((row) =>
+      mapOrderWithRelations(row as Parameters<typeof mapOrderWithRelations>[0]),
+    );
 
     return NextResponse.json({ orders });
   } catch (error) {
@@ -258,5 +248,3 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 });
   }
 }
-
-

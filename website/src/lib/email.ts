@@ -1,5 +1,6 @@
-import type { OrderStatus } from '@prisma/client';
 import nodemailer from 'nodemailer';
+
+import type { OrderStatus } from '@/types/db';
 
 // Gmail SMTP transporter
 const gmailTransporter = process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
