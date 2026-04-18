@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { AdminCatalogHealthBannerGate } from '@/components/AdminCatalogHealthBannerGate';
 import DeliveryRequest from '@/components/DeliveryRequest';
 import { AuthGate } from '@/components/auth/AuthGate';
+import { CustomerOnlyGate } from '@/components/auth/CustomerOnlyGate';
 import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = {
@@ -46,8 +47,10 @@ export default function RequestDeliveryPage() {
             title="Sign in to request a delivery"
             description="CampusEats deliveries are available to authenticated UT students and staff. Sign in with your campus email to get started."
           >
-            <AdminCatalogHealthBannerGate />
-            <DeliveryRequest />
+            <CustomerOnlyGate>
+              <AdminCatalogHealthBannerGate />
+              <DeliveryRequest />
+            </CustomerOnlyGate>
           </AuthGate>
         </div>
       </main>

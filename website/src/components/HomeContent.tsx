@@ -13,6 +13,8 @@ import {
   Zap,
   Truck,
   Sparkle,
+  Activity,
+  PlugZap,
 } from 'lucide-react';
 
 import { AdminCatalogHealthBanner } from '@/components/AdminCatalogHealthBanner';
@@ -398,21 +400,86 @@ const UserHome = ({ profile }: { profile: UserProfile | null }) => (
   </div>
 );
 
+const AdminHome = ({ profile }: { profile: UserProfile }) => (
+  <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 py-12">
+    <div className="container mx-auto max-w-5xl space-y-8 px-4">
+      <AdminCatalogHealthBanner />
+
+      <div className="rounded-3xl border border-slate-800/60 bg-slate-900/60 p-10 shadow-lg shadow-cyan-500/10">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <span className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-cyan-200">
+            <Sparkle className="h-4 w-4" />
+            Operations command center
+          </span>
+          <h1 className="text-4xl font-semibold text-white md:text-5xl">
+            Welcome back, {profile.firstName}
+          </h1>
+          <p className="max-w-2xl text-lg text-slate-300">
+            Monitor the autonomous fleet, advance bot statuses, and keep deliveries flowing across
+            campus. Customer ordering is disabled on operations accounts.
+          </p>
+        </div>
+
+        <div className="mt-10 grid gap-6 md:grid-cols-2">
+          <div className="rounded-2xl border border-blue-500/30 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 p-6 text-left">
+            <div className="flex items-center gap-3">
+              <Activity className="h-10 w-10 text-cyan-200" />
+              <div>
+                <h2 className="text-xl font-semibold text-white">Fleet operations</h2>
+                <p className="text-sm text-cyan-100/80">
+                  Live status, location, battery, and current assignment for every robot.
+                </p>
+              </div>
+            </div>
+            <Button asChild className="mt-6 w-full">
+              <Link href="/operations">
+                Open operations console
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6 text-left">
+            <div className="flex items-center gap-3">
+              <PlugZap className="h-10 w-10 text-slate-200" />
+              <div>
+                <h2 className="text-xl font-semibold text-white">Operations checklist</h2>
+                <p className="text-sm text-slate-300">
+                  Keep heartbeats fresh, batteries healthy, and stuck orders unblocked.
+                </p>
+              </div>
+            </div>
+            <ul className="mt-4 space-y-2 text-sm text-slate-300">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 text-cyan-300" />
+                Watch for bots stuck in OFFLINE longer than expected.
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 text-cyan-300" />
+                Send low-battery bots to CHARGING before the next dispatch.
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 text-cyan-300" />
+                Flag bots in MAINTENANCE so dispatch skips them.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const AuthenticatedHome = ({ profile }: { profile: UserProfile | null }) => {
   if (profile?.role === 'RESTAURANT') {
     return <RestaurantHome profile={profile} />;
   }
 
-  return (
-    <>
-      {profile?.role === 'ADMIN' ? (
-        <div className="container mx-auto max-w-4xl px-4 pt-8">
-          <AdminCatalogHealthBanner />
-        </div>
-      ) : null}
-      <UserHome profile={profile} />
-    </>
-  );
+  if (profile?.role === 'ADMIN') {
+    return <AdminHome profile={profile} />;
+  }
+
+  return <UserHome profile={profile} />;
 };
 
 export const HomeContent = () => {

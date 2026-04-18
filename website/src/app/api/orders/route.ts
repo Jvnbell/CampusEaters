@@ -43,6 +43,15 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     }
+    if (auth.profile.role !== 'USER') {
+      return NextResponse.json(
+        {
+          error:
+            'Only customer accounts can place delivery orders. Restaurant and operations accounts cannot request deliveries.',
+        },
+        { status: 403 },
+      );
+    }
 
     const body = (await request.json()) as CreateOrderBody;
 
