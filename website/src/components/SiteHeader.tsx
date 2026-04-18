@@ -20,6 +20,11 @@ const restaurantNavLinks = [
   { href: '/restaurant/orders', label: 'Manage Orders' },
 ];
 
+const adminNavLinks = [
+  { href: '/', label: 'Home' },
+  { href: '/operations', label: 'Operations' },
+];
+
 const marketingNavLinks = [
   { href: '/#how-it-works', label: 'How It Works' },
   { href: '/#robot-fleet', label: 'Robot Fleet' },
@@ -54,9 +59,11 @@ export const SiteHeader = () => {
   };
 
   const navLinks = user
-    ? profile?.role === 'RESTAURANT'
-      ? restaurantNavLinks
-      : authenticatedNavLinks
+    ? profile?.role === 'ADMIN'
+      ? adminNavLinks
+      : profile?.role === 'RESTAURANT'
+        ? restaurantNavLinks
+        : authenticatedNavLinks
     : marketingNavLinks;
 
   return (

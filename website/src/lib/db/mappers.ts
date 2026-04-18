@@ -6,6 +6,9 @@
 
 import type {
   AuthProfile,
+  Bot,
+  BotRow,
+  BotWithCurrentOrder,
   MenuItemRow,
   MenuItemSummary,
   Order,
@@ -121,8 +124,8 @@ type OrderRowWithRelations = OrderRow & {
     | Array<{ id?: string; first_name: string; last_name: string; email: string }>
     | null;
   bot?:
-    | { id: string; primary_location: string }
-    | Array<{ id: string; primary_location: string }>
+    | { id: string; name?: string; primary_location: string }
+    | Array<{ id: string; name?: string; primary_location: string }>
     | null;
   order_items?: OrderItemRowWithMenu[] | null;
 };
@@ -147,7 +150,11 @@ export function mapOrderWithRelations(row: OrderRowWithRelations): OrderWithRela
     : undefined;
 
   const botSummary: OrderBotSummary | null = bot
-    ? { id: bot.id, primaryLocation: bot.primary_location }
+    ? {
+        id: bot.id,
+        name: (bot as { name?: string }).name,
+        primaryLocation: bot.primary_location,
+      }
     : null;
 
   return {
@@ -156,5 +163,69 @@ export function mapOrderWithRelations(row: OrderRowWithRelations): OrderWithRela
     orderItems: (row.order_items ?? []).map(mapOrderItem),
     user: userSummary,
     bot: botSummary,
+  };
+}
+
+export function mapBot(row: BotRow): Bot {
+  return {
+    id: row.id,
+    name: row.name,
+    status: row.status,
+    primaryLocation: row.primary_location,
+    currentLocation: row.current_location,
+    batteryLevel: row.battery_level ?? null,
+    lastHeartbeatAt: row.last_heartbeat_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+type ActiveOrderForBotRow = {
+  id: string;
+  order_number: number;
+  status: OrderRow['status'];
+  delivery_location: string;
+  placed_at: string;
+  restaurant?:
+    | { id: string; name: string; location: string }
+    | Array<{ id: string; name: string; location: string }>
+    | null;
+  user?:
+    | { first_name: string; last_name: string; email: string }
+    | Array<{ first_name: string; last_name: string; email: string }>
+    | null;
+};
+
+export function mapBotWithCurrentOrder(
+  bot: BotRow,
+  activeOrder: ActiveOrderForBotRow | null,
+): BotWithCurrentOrder {
+  const base = mapBot(bot);
+  if (!activeOrder) {
+    return { ...base, currentOrder: null };
+  }
+
+  const restaurant = pickFirst(activeOrder.restaurant);
+  const customer = pickFirst(activeOrder.user);
+
+  return {
+    ...base,
+    currentOrder: {
+      id: activeOrder.id,
+      orderNumber: activeOrder.order_number,
+      status: activeOrder.status,
+      deliveryLocation: activeOrder.delivery_location,
+      placedAt: activeOrder.placed_at,
+      restaurant: restaurant
+        ? { id: restaurant.id, name: restaurant.name, location: restaurant.location }
+        : null,
+      customer: customer
+        ? {
+            firstName: customer.first_name,
+            lastName: customer.last_name,
+            email: customer.email,
+          }
+        : null,
+    },
   };
 }

@@ -5,6 +5,28 @@
 
 export type AccountRole = 'USER' | 'ADMIN' | 'RESTAURANT';
 export type OrderStatus = 'SENT' | 'RECEIVED' | 'SHIPPING' | 'DELIVERED';
+export type BotStatus =
+  | 'IDLE'
+  | 'EN_ROUTE_PICKUP'
+  | 'AT_RESTAURANT'
+  | 'EN_ROUTE_DELIVERY'
+  | 'AT_DROPOFF'
+  | 'RETURNING'
+  | 'CHARGING'
+  | 'OFFLINE'
+  | 'MAINTENANCE';
+
+export const BOT_STATUSES: BotStatus[] = [
+  'IDLE',
+  'EN_ROUTE_PICKUP',
+  'AT_RESTAURANT',
+  'EN_ROUTE_DELIVERY',
+  'AT_DROPOFF',
+  'RETURNING',
+  'CHARGING',
+  'OFFLINE',
+  'MAINTENANCE',
+];
 
 // ---------------------------------------------------------------------------
 // Snake_case rows that match the Postgres schema in
@@ -42,7 +64,12 @@ export type MenuItemRow = {
 
 export type BotRow = {
   id: string;
+  name: string;
   primary_location: string;
+  current_location: string;
+  status: BotStatus;
+  battery_level: number | null;
+  last_heartbeat_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -122,7 +149,32 @@ export type OrderUserSummary = {
 
 export type OrderBotSummary = {
   id: string;
+  name?: string;
   primaryLocation: string;
+};
+
+export type Bot = {
+  id: string;
+  name: string;
+  status: BotStatus;
+  primaryLocation: string;
+  currentLocation: string;
+  batteryLevel: number | null;
+  lastHeartbeatAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BotWithCurrentOrder = Bot & {
+  currentOrder: {
+    id: string;
+    orderNumber: number;
+    status: OrderStatus;
+    deliveryLocation: string;
+    placedAt: string;
+    restaurant: { id: string; name: string; location: string } | null;
+    customer: { firstName: string; lastName: string; email: string } | null;
+  } | null;
 };
 
 export type Order = {

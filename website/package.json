@@ -9,7 +9,10 @@
     "start": "next start",
     "lint": "next lint",
     "db:seed": "tsx scripts/seed.ts",
-    "script:order-load": "tsx scripts/order-load.ts"
+    "db:seed:bots": "tsx scripts/seed-bots.ts",
+    "script:order-load": "tsx scripts/order-load.ts",
+    "script:grant-admin": "tsx scripts/grant-admin.ts",
+    "script:grant-restaurant": "tsx scripts/grant-restaurant-access.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
