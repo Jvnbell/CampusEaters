@@ -93,6 +93,15 @@ export type RestaurantRatingRow = {
   average_rating: string | number;
 };
 
+export type DeviceTokenRow = {
+  id: string;
+  user_id: string;
+  token: string;
+  platform: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type OrderRow = {
   id: string;
   order_number: number;
@@ -281,6 +290,11 @@ export type Database = {
         Insert: Partial<ReviewRow> &
           Pick<ReviewRow, 'order_id' | 'user_id' | 'restaurant_id' | 'rating'>;
         Update: Partial<ReviewRow>;
+      };
+      device_tokens: {
+        Row: DeviceTokenRow;
+        Insert: Partial<DeviceTokenRow> & Pick<DeviceTokenRow, 'user_id' | 'token'>;
+        Update: Partial<DeviceTokenRow>;
       };
     };
     Views: {

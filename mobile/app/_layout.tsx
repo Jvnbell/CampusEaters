@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { NotificationRouter } from '@/components/NotificationRouter';
 import { AuthProvider } from '@/lib/auth-context';
 
 /**
@@ -17,6 +18,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <AuthProvider>
           <StatusBar style="light" />
+          <NotificationRouter />
           <Stack
             screenOptions={{
               headerShown: false,

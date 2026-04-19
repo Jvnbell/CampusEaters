@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { getAuthUserAndProfile, unauthorized } from '@/lib/api-auth';
 import { mapOrderWithRelations } from '@/lib/db/mappers';
 import { sendOrderStatusEmail } from '@/lib/email';
+import { sendOrderStatusPush } from '@/lib/push';
+import { broadcastOrderUpdate } from '@/lib/realtime';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
 type CreateOrderBody = {
@@ -217,6 +219,23 @@ export async function POST(request: Request) {
       });
       console.log('[API /orders POST] Email notification sent');
     }
+
+    // Push + realtime broadcast — both are best-effort and never block the
+    // response. The mobile app uses the broadcast for live UI updates and
+    // the push for system-level notifications.
+    void Promise.all([
+      sendOrderStatusPush({
+        userId: order.userId,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        restaurantName: order.restaurant.name,
+      }),
+      broadcastOrderUpdate({
+        userId: order.userId,
+        event: 'order_created',
+        order,
+      }),
+    ]).catch((err) => console.error('[API /orders POST] notify failed', err));
 
     return NextResponse.json({ order }, { status: 201 });
   } catch (error) {

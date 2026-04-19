@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 
 import { api, ApiError } from './api';
+import { registerForPushNotifications, unregisterPushNotifications } from './push';
 import { attachSupabaseAppStateListener, supabase } from './supabase';
 import type { UserProfile } from './types';
 
@@ -34,6 +35,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [initializing, setInitializing] = useState(true);
+  // The push token is held in a ref (not state) because it never drives UI;
+  // we just need to remember it so we can unregister on sign-out.
+  const pushTokenRef = useRef<string | null>(null);
 
   const loadProfile = useCallback(async (currentSession: Session | null) => {
     if (!currentSession?.user?.email) {
@@ -82,6 +86,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [loadProfile]);
 
+  // Push token lifecycle. We register only after we have a profile (and thus
+  // a confirmed users.id on the server). On sign-out we tear it down so the
+  // server stops trying to push to a logged-out device.
+  useEffect(() => {
+    if (!profile) {
+      const previous = pushTokenRef.current;
+      if (previous) {
+        pushTokenRef.current = null;
+        void unregisterPushNotifications(previous);
+      }
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const token = await registerForPushNotifications();
+      if (!cancelled && token) pushTokenRef.current = token;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
@@ -113,6 +139,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { needsConfirmation: !data.session };
       },
       signOut: async () => {
+        // Unregister BEFORE the JWT is invalidated, otherwise the API call
+        // would 401. Best-effort — never blocks sign-out.
+        const tokenToRemove = pushTokenRef.current;
+        pushTokenRef.current = null;
+        if (tokenToRemove) {
+          await unregisterPushNotifications(tokenToRemove);
+        }
         const { error } = await supabase.auth.signOut();
         if (error) throw new Error(error.message);
         setProfile(null);

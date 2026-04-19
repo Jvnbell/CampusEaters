@@ -10,6 +10,7 @@ import { OrderSummary } from '@/components/OrderSummary';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { useOrderRealtime } from '@/lib/realtime';
 import { colors } from '@/lib/theme';
 import type { OrderWithRelations } from '@/lib/types';
 
@@ -54,6 +55,27 @@ export default function OrdersScreen() {
     await load();
     setRefreshing(false);
   }, [load]);
+
+  // Live updates: when the server broadcasts a status change, swap the row
+  // in-place so the timeline re-animates immediately without a refetch
+  // round-trip. New orders trigger a full reload so the active/history
+  // counts stay in sync.
+  useOrderRealtime(
+    useCallback(
+      (event, incoming) => {
+        if (event === 'order_updated') {
+          setOrders((prev) => {
+            const next = prev.map((o) => (o.id === incoming.id ? incoming : o));
+            const exists = prev.some((o) => o.id === incoming.id);
+            return exists ? next : [incoming, ...prev];
+          });
+        } else {
+          void load();
+        }
+      },
+      [load],
+    ),
+  );
 
   const active = orders.filter((o) => ACTIVE_STATUSES.has(o.status));
   const history = orders.filter((o) => !ACTIVE_STATUSES.has(o.status));

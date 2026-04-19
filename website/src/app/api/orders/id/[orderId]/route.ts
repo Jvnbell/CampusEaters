@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { forbidden, getAuthUserAndProfile, unauthorized } from '@/lib/api-auth';
 import { mapOrderWithRelations } from '@/lib/db/mappers';
 import { sendOrderStatusEmail } from '@/lib/email';
+import { sendOrderStatusPush } from '@/lib/push';
+import { broadcastOrderUpdate } from '@/lib/realtime';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import type { OrderStatus } from '@/types/db';
 
@@ -110,6 +112,24 @@ export async function PATCH(
         deliveryLocation: order.deliveryLocation,
       });
       console.log('[API /orders/id PATCH] Email notification sent');
+    }
+
+    // Always broadcast the update so any open mobile client refreshes; also
+    // send a push when the status actually changed (no point pinging the
+    // user when only the bot_id was assigned).
+    void broadcastOrderUpdate({
+      userId: order.userId,
+      event: 'order_updated',
+      order,
+    }).catch((err) => console.error('[API /orders/id PATCH] broadcast failed', err));
+
+    if (statusChanged && body.status) {
+      void sendOrderStatusPush({
+        userId: order.userId,
+        orderNumber: order.orderNumber,
+        status: body.status,
+        restaurantName: order.restaurant.name,
+      }).catch((err) => console.error('[API /orders/id PATCH] push failed', err));
     }
 
     return NextResponse.json({ order });

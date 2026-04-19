@@ -9,6 +9,7 @@ import { ScreenContainer } from '@/components/ScreenContainer';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { orderStatusLabel, orderStatusTint } from '@/lib/format';
+import { useOrderRealtime } from '@/lib/realtime';
 import { colors } from '@/lib/theme';
 import type { OrderWithRelations, RestaurantWithMenuAndRating } from '@/lib/types';
 
@@ -48,6 +49,20 @@ export default function HomeScreen() {
     await load();
     setRefreshing(false);
   }, [load]);
+
+  // Realtime: keep the "Current delivery" tile fresh without polling. We
+  // patch updates in place and prepend brand-new orders so the tile shows
+  // up the instant the server confirms one.
+  useOrderRealtime(
+    useCallback((event, incoming) => {
+      setOrders((prev) => {
+        if (event === 'order_created' && !prev.some((o) => o.id === incoming.id)) {
+          return [incoming, ...prev];
+        }
+        return prev.map((o) => (o.id === incoming.id ? incoming : o));
+      });
+    }, []),
+  );
 
   const activeOrder = useMemo(
     () => orders.find((o) => ACTIVE_STATUSES.has(o.status)) ?? null,
