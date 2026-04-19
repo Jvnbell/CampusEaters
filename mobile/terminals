@@ -1,0 +1,7 @@
+re-run ipconfig getifaddr en0,
+update EXPO_PUBLIC_API_URL in mobile/.env, and restart npm start
+cd website
+npm run dev -- -H 0.0.0.0
+
+cd mobile
+npm start

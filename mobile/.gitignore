@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Logs / system
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/

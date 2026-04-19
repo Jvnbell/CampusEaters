@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "CampusEats",
+    "slug": "campuseats",
+    "scheme": "campuseats",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#08070d"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.campuseats.app"
+    },
+    "android": {
+      "package": "com.campuseats.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#08070d"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": ["expo-router", "expo-font"],
+    "experiments": {
+      "typedRoutes": true,
+      "tsconfigPaths": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}
