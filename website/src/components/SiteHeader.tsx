@@ -12,21 +12,25 @@ import { useCurrentProfile } from '@/hooks/use-current-profile';
 
 const authenticatedNavLinks = [
   { href: '/', label: 'Home' },
+  { href: '/restaurants', label: 'Restaurants' },
   { href: '/request-delivery', label: 'Request Delivery' },
   { href: '/track-package', label: 'Track Package' },
 ];
 
 const restaurantNavLinks = [
   { href: '/', label: 'Home' },
+  { href: '/restaurants', label: 'Restaurants' },
   { href: '/restaurant/orders', label: 'Manage Orders' },
 ];
 
 const adminNavLinks = [
   { href: '/', label: 'Home' },
+  { href: '/restaurants', label: 'Restaurants' },
   { href: '/operations', label: 'Operations' },
 ];
 
 const marketingNavLinks = [
+  { href: '/restaurants', label: 'Restaurants' },
   { href: '/#how-it-works', label: 'How it works' },
   { href: '/#robot-fleet', label: 'Robot fleet' },
   { href: '/#get-started', label: 'Get started' },

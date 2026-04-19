@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Package } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -34,6 +35,9 @@ type SelectedItemsState = Record<string, number>;
 
 const DeliveryRequest = () => {
   const { user: authUser, isLoading: authLoading } = useSupabaseAuth();
+  const searchParams = useSearchParams();
+  const preselectRestaurantId = searchParams?.get('restaurant') ?? '';
+
   const [restaurantId, setRestaurantId] = useState('');
   const [deliveryLocation, setDeliveryLocation] = useState('');
   const [restaurants, setRestaurants] = useState<RestaurantOption[]>([]);
@@ -41,6 +45,16 @@ const DeliveryRequest = () => {
   const [selectedItems, setSelectedItems] = useState<SelectedItemsState>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Auto-select the restaurant when arriving via /restaurants/<id> deep link.
+  // We wait for the restaurant list to populate so the <Select> resolves a
+  // matching <SelectItem> instead of momentarily rendering an empty value.
+  useEffect(() => {
+    if (!preselectRestaurantId || restaurantId) return;
+    if (restaurants.some((r) => r.id === preselectRestaurantId)) {
+      setRestaurantId(preselectRestaurantId);
+    }
+  }, [preselectRestaurantId, restaurants, restaurantId]);
 
   useEffect(() => {
     let isMounted = true;

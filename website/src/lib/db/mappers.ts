@@ -18,7 +18,11 @@ import type {
   OrderRow,
   OrderUserSummary,
   OrderWithRelations,
+  RestaurantRatingRow,
   RestaurantWithMenu,
+  RestaurantWithMenuAndRating,
+  Review,
+  ReviewRow,
   UserProfile,
   UserRow,
 } from '@/types/db';
@@ -28,6 +32,17 @@ const formatPrice = (price: string | number | null | undefined): string => {
   if (price === null || price === undefined) return '0.00';
   if (typeof price === 'number') return price.toFixed(2);
   return price;
+};
+
+const pickFirst = <T>(value: T | T[] | null | undefined): T | null => {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+};
+
+const toFiniteNumber = (value: string | number | null | undefined, fallback = 0): number => {
+  if (value === null || value === undefined) return fallback;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
 };
 
 export function mapAuthProfile(row: Pick<UserRow, 'id' | 'email' | 'first_name' | 'last_name' | 'role' | 'restaurant_id'>): AuthProfile {
@@ -74,6 +89,56 @@ export function mapRestaurantWithMenu(row: RestaurantWithMenuRow): RestaurantWit
   };
 }
 
+export function mapRestaurantRating(
+  row: Pick<RestaurantRatingRow, 'review_count' | 'average_rating'> | null | undefined,
+): { averageRating: number; reviewCount: number } {
+  if (!row) return { averageRating: 0, reviewCount: 0 };
+  return {
+    averageRating: toFiniteNumber(row.average_rating, 0),
+    reviewCount: Math.max(0, Math.trunc(toFiniteNumber(row.review_count, 0))),
+  };
+}
+
+type RestaurantWithRatingRow = RestaurantWithMenuRow & {
+  restaurant_ratings?:
+    | Pick<RestaurantRatingRow, 'review_count' | 'average_rating'>
+    | Array<Pick<RestaurantRatingRow, 'review_count' | 'average_rating'>>
+    | null;
+};
+
+export function mapRestaurantWithMenuAndRating(
+  row: RestaurantWithRatingRow,
+): RestaurantWithMenuAndRating {
+  const base = mapRestaurantWithMenu(row);
+  const ratingRow = pickFirst(row.restaurant_ratings ?? null);
+  const { averageRating, reviewCount } = mapRestaurantRating(ratingRow);
+  return { ...base, averageRating, reviewCount };
+}
+
+type ReviewRowWithReviewer = ReviewRow & {
+  reviewer?:
+    | Pick<UserRow, 'first_name' | 'last_name'>
+    | Array<Pick<UserRow, 'first_name' | 'last_name'>>
+    | null;
+};
+
+export function mapReview(row: ReviewRowWithReviewer): Review {
+  const reviewer = pickFirst(row.reviewer ?? null);
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    userId: row.user_id,
+    restaurantId: row.restaurant_id,
+    rating: row.rating,
+    comment: row.comment ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    reviewer: reviewer
+      ? { firstName: reviewer.first_name, lastName: reviewer.last_name }
+      : undefined,
+  };
+}
+
 type OrderItemRowWithMenu = {
   id: string;
   quantity: number;
@@ -81,11 +146,6 @@ type OrderItemRowWithMenu = {
     | Pick<MenuItemRow, 'name' | 'price'>
     | Array<Pick<MenuItemRow, 'name' | 'price'>>
     | null;
-};
-
-const pickFirst = <T>(value: T | T[] | null | undefined): T | null => {
-  if (Array.isArray(value)) return value[0] ?? null;
-  return value ?? null;
 };
 
 export function mapOrderItem(row: OrderItemRowWithMenu): OrderItemWithMenu {
@@ -175,6 +235,14 @@ export function mapBot(row: BotRow): Bot {
     currentLocation: row.current_location,
     batteryLevel: row.battery_level ?? null,
     lastHeartbeatAt: row.last_heartbeat_at ?? null,
+    positionX:
+      row.position_x === null || row.position_x === undefined
+        ? null
+        : toFiniteNumber(row.position_x, 0),
+    positionY:
+      row.position_y === null || row.position_y === undefined
+        ? null
+        : toFiniteNumber(row.position_y, 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

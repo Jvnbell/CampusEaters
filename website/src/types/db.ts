@@ -70,8 +70,27 @@ export type BotRow = {
   status: BotStatus;
   battery_level: number | null;
   last_heartbeat_at: string | null;
+  position_x: string | number | null;
+  position_y: string | number | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ReviewRow = {
+  id: string;
+  order_id: string;
+  user_id: string;
+  restaurant_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RestaurantRatingRow = {
+  restaurant_id: string;
+  review_count: number;
+  average_rating: string | number;
 };
 
 export type OrderRow = {
@@ -126,6 +145,26 @@ export type RestaurantWithMenu = {
   menuItems: MenuItemSummary[];
 };
 
+export type RestaurantWithMenuAndRating = RestaurantWithMenu & {
+  averageRating: number;
+  reviewCount: number;
+};
+
+export type Review = {
+  id: string;
+  orderId: string;
+  userId: string;
+  restaurantId: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reviewer?: {
+    firstName: string;
+    lastName: string;
+  };
+};
+
 export type OrderItemWithMenu = {
   id: string;
   quantity: number;
@@ -161,6 +200,8 @@ export type Bot = {
   currentLocation: string;
   batteryLevel: number | null;
   lastHeartbeatAt: string | null;
+  positionX: number | null;
+  positionY: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -235,8 +276,16 @@ export type Database = {
         Insert: Partial<OrderItemRow> & Pick<OrderItemRow, 'order_id' | 'menu_item_id'>;
         Update: Partial<OrderItemRow>;
       };
+      reviews: {
+        Row: ReviewRow;
+        Insert: Partial<ReviewRow> &
+          Pick<ReviewRow, 'order_id' | 'user_id' | 'restaurant_id' | 'rating'>;
+        Update: Partial<ReviewRow>;
+      };
     };
-    Views: Record<string, never>;
+    Views: {
+      restaurant_ratings: { Row: RestaurantRatingRow };
+    };
     Functions: {
       create_order: {
         Args: {

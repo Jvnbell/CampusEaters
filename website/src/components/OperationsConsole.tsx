@@ -9,6 +9,8 @@ import {
   BatteryLow,
   CheckCircle2,
   Hammer,
+  LayoutGrid,
+  Map as MapIcon,
   MapPin,
   Package,
   Pause,
@@ -19,6 +21,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 
+import { FleetMap } from '@/components/FleetMap';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,6 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCurrentProfile } from '@/hooks/use-current-profile';
 import { BOT_STATUSES, type BotStatus, type BotWithCurrentOrder } from '@/types/db';
 
@@ -54,27 +58,27 @@ const STATUS_LABEL: Record<BotStatus, string> = {
 };
 
 const STATUS_BADGE: Record<BotStatus, string> = {
-  IDLE: 'bg-slate-700 text-slate-100',
-  EN_ROUTE_PICKUP: 'bg-amber-500 text-slate-950',
-  AT_RESTAURANT: 'bg-amber-400 text-slate-950',
-  EN_ROUTE_DELIVERY: 'bg-blue-500 text-white',
-  AT_DROPOFF: 'bg-indigo-500 text-white',
-  RETURNING: 'bg-cyan-500 text-slate-950',
-  CHARGING: 'bg-emerald-600 text-white',
-  OFFLINE: 'bg-red-600 text-white',
-  MAINTENANCE: 'bg-orange-600 text-white',
+  IDLE: 'bg-white/[0.06] text-foreground',
+  EN_ROUTE_PICKUP: 'bg-warning/20 text-warning',
+  AT_RESTAURANT: 'bg-warning/20 text-warning',
+  EN_ROUTE_DELIVERY: 'bg-primary/20 text-primary-foreground',
+  AT_DROPOFF: 'bg-secondary/20 text-secondary',
+  RETURNING: 'bg-secondary/20 text-secondary',
+  CHARGING: 'bg-success/20 text-success',
+  OFFLINE: 'bg-destructive/20 text-destructive',
+  MAINTENANCE: 'bg-warning/20 text-warning',
 };
 
 const STATUS_ICON: Record<BotStatus, JSX.Element> = {
-  IDLE: <Pause className="h-4 w-4" />,
-  EN_ROUTE_PICKUP: <Truck className="h-4 w-4" />,
-  AT_RESTAURANT: <Package className="h-4 w-4" />,
-  EN_ROUTE_DELIVERY: <Truck className="h-4 w-4" />,
-  AT_DROPOFF: <Package className="h-4 w-4" />,
-  RETURNING: <Truck className="h-4 w-4" />,
-  CHARGING: <PlugZap className="h-4 w-4" />,
-  OFFLINE: <WifiOff className="h-4 w-4" />,
-  MAINTENANCE: <Hammer className="h-4 w-4" />,
+  IDLE: <Pause className="h-3.5 w-3.5" />,
+  EN_ROUTE_PICKUP: <Truck className="h-3.5 w-3.5" />,
+  AT_RESTAURANT: <Package className="h-3.5 w-3.5" />,
+  EN_ROUTE_DELIVERY: <Truck className="h-3.5 w-3.5" />,
+  AT_DROPOFF: <Package className="h-3.5 w-3.5" />,
+  RETURNING: <Truck className="h-3.5 w-3.5" />,
+  CHARGING: <PlugZap className="h-3.5 w-3.5" />,
+  OFFLINE: <WifiOff className="h-3.5 w-3.5" />,
+  MAINTENANCE: <Hammer className="h-3.5 w-3.5" />,
 };
 
 const ORDER_STATUS_LABEL: Record<string, string> = {
@@ -107,18 +111,14 @@ const BatteryIndicator = ({
 }) => {
   if (level === null) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
         <Battery className="h-4 w-4" /> n/a
       </span>
     );
   }
   const Icon = charging ? BatteryCharging : level <= 20 ? BatteryLow : Battery;
   const color =
-    charging || level > 50
-      ? 'text-emerald-400'
-      : level > 20
-        ? 'text-amber-400'
-        : 'text-red-400';
+    charging || level > 50 ? 'text-success' : level > 20 ? 'text-warning' : 'text-destructive';
   return (
     <span className={`inline-flex items-center gap-1 text-xs ${color}`}>
       <Icon className="h-4 w-4" /> {level}%
@@ -133,6 +133,7 @@ export const OperationsConsole = () => {
   const [updatingBotId, setUpdatingBotId] = useState<string | null>(null);
   const [locationDrafts, setLocationDrafts] = useState<Record<string, string>>({});
   const [batteryDrafts, setBatteryDrafts] = useState<Record<string, string>>({});
+  const [highlightedBotId, setHighlightedBotId] = useState<string | null>(null);
 
   const fetchBots = useCallback(async () => {
     setIsFetching(true);
@@ -167,48 +168,65 @@ export const OperationsConsole = () => {
     return { total, active, offline, charging };
   }, [bots]);
 
-  const patchBot = async (
-    botId: string,
-    update: { status?: BotStatus; currentLocation?: string; batteryLevel?: number | null },
-  ) => {
-    setUpdatingBotId(botId);
-    try {
-      const response = await fetch(`/api/bots/${botId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(update),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error ?? 'Failed to update bot.');
+  const patchBot = useCallback(
+    async (
+      botId: string,
+      update: {
+        status?: BotStatus;
+        currentLocation?: string;
+        batteryLevel?: number | null;
+        positionX?: number | null;
+        positionY?: number | null;
+      },
+      opts: { silent?: boolean } = {},
+    ) => {
+      setUpdatingBotId(botId);
+      try {
+        const response = await fetch(`/api/bots/${botId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(update),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error ?? 'Failed to update bot.');
+        }
+        if (!opts.silent) toast.success('Bot updated.');
+        await fetchBots();
+      } catch (error) {
+        console.error('[OperationsConsole] patch failed', error);
+        toast.error(error instanceof Error ? error.message : 'Unable to update bot.');
+      } finally {
+        setUpdatingBotId(null);
       }
-      toast.success('Bot updated.');
-      await fetchBots();
-    } catch (error) {
-      console.error('[OperationsConsole] patch failed', error);
-      toast.error(error instanceof Error ? error.message : 'Unable to update bot.');
-    } finally {
-      setUpdatingBotId(null);
-    }
-  };
+    },
+    [fetchBots],
+  );
+
+  const handleMapMove = useCallback(
+    (botId: string, positionX: number, positionY: number) => {
+      void patchBot(botId, { positionX, positionY }, { silent: true });
+    },
+    [patchBot],
+  );
 
   if (profileLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-24 w-full bg-white/5" />
+        <Skeleton className="h-64 w-full bg-white/5" />
       </div>
     );
   }
 
   if (!profile || profile.role !== 'ADMIN') {
     return (
-      <Card className="border border-amber-500/30 bg-amber-500/10">
+      <Card className="glass-panel-strong border-warning/20">
         <CardHeader>
-          <CardTitle className="text-amber-100">Operations access required</CardTitle>
-          <CardDescription className="text-amber-200/80">
+          <CardTitle className="text-warning">Operations access required</CardTitle>
+          <CardDescription className="text-warning/80">
             Only administrators can view the bot fleet. From the website folder, run{' '}
-            <code className="rounded bg-slate-900/60 px-1 py-0.5 text-xs">
+            <code className="rounded bg-white/[0.06] px-1 py-0.5 text-xs">
               GRANT_EMAIL=&lt;your email&gt; npm run script:grant-admin
             </code>{' '}
             to promote your account.
@@ -221,37 +239,41 @@ export const OperationsConsole = () => {
   return (
     <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-4">
-        <SummaryStat label="Total bots" value={counts.total} icon={<Wifi className="h-5 w-5" />} />
+        <SummaryStat
+          label="Total bots"
+          value={counts.total}
+          icon={<Wifi className="h-5 w-5" />}
+        />
         <SummaryStat
           label="On a delivery"
           value={counts.active}
           icon={<Truck className="h-5 w-5" />}
-          accent="text-blue-300"
+          accent="text-secondary"
         />
         <SummaryStat
           label="Charging"
           value={counts.charging}
           icon={<PlugZap className="h-5 w-5" />}
-          accent="text-emerald-300"
+          accent="text-success"
         />
         <SummaryStat
           label="Offline"
           value={counts.offline}
           icon={<WifiOff className="h-5 w-5" />}
-          accent="text-red-300"
+          accent="text-destructive"
         />
       </div>
 
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-white">Fleet status</h2>
-          <p className="text-sm text-slate-400">
-            Auto-refreshing every 15 seconds. Update status and location as bots move.
+          <h2 className="font-display text-xl font-semibold text-foreground">Fleet status</h2>
+          <p className="text-sm text-muted-foreground">
+            Auto-refreshing every 15 seconds. Drag bots on the map to update their live positions.
           </p>
         </div>
         <Button
           variant="outline"
-          className="border-slate-700 text-slate-100"
+          className="rounded-full border-white/10 bg-white/[0.03] text-foreground hover:bg-white/[0.07]"
           onClick={fetchBots}
           disabled={isFetching}
         >
@@ -261,14 +283,14 @@ export const OperationsConsole = () => {
       </div>
 
       {bots.length === 0 ? (
-        <Card className="border border-slate-800/60 bg-slate-900/70">
+        <Card className="glass-panel-strong border-0">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-white">
-              <CheckCircle2 className="h-5 w-5 text-emerald-400" /> No bots registered
+            <CardTitle className="flex items-center gap-2 text-foreground">
+              <CheckCircle2 className="h-5 w-5 text-success" /> No bots registered
             </CardTitle>
-            <CardDescription className="text-slate-300">
+            <CardDescription>
               From the website folder, run{' '}
-              <code className="rounded bg-slate-900/60 px-1 py-0.5 text-xs">
+              <code className="rounded bg-white/[0.06] px-1 py-0.5 text-xs">
                 npm run db:seed:bots
               </code>{' '}
               to insert three demo robots.
@@ -276,206 +298,240 @@ export const OperationsConsole = () => {
           </CardHeader>
         </Card>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {bots.map((bot) => {
-            const locationDraft = locationDrafts[bot.id] ?? bot.currentLocation;
-            const batteryDraft =
-              batteryDrafts[bot.id] ?? (bot.batteryLevel === null ? '' : String(bot.batteryLevel));
+        <Tabs defaultValue="map" className="space-y-6">
+          <TabsList className="grid w-full max-w-sm grid-cols-2">
+            <TabsTrigger value="map" className="flex items-center gap-2">
+              <MapIcon className="h-4 w-4" />
+              Live map
+            </TabsTrigger>
+            <TabsTrigger value="cards" className="flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4" />
+              Bot cards
+            </TabsTrigger>
+          </TabsList>
 
-            return (
-              <Card
-                key={bot.id}
-                className="border border-slate-800/60 bg-slate-900/70 shadow-lg shadow-blue-500/10"
-              >
-                <CardHeader className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <CardTitle className="text-white">{bot.name}</CardTitle>
-                      <Badge className={STATUS_BADGE[bot.status]}>
-                        <span className="inline-flex items-center gap-1">
-                          {STATUS_ICON[bot.status]} {STATUS_LABEL[bot.status]}
-                        </span>
-                      </Badge>
-                    </div>
-                    <BatteryIndicator
-                      level={bot.batteryLevel}
-                      charging={bot.status === 'CHARGING'}
-                    />
-                  </div>
-                  <CardDescription className="flex flex-wrap items-center gap-3 text-slate-300">
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin className="h-4 w-4 text-slate-500" />
-                      {bot.currentLocation}
-                    </span>
-                    <span className="text-slate-500">•</span>
-                    <span className="text-xs text-slate-400">
-                      Home base: {bot.primaryLocation}
-                    </span>
-                    <span className="text-slate-500">•</span>
-                    <span className="text-xs text-slate-400">
-                      Heartbeat: {formatRelative(bot.lastHeartbeatAt)}
-                    </span>
-                  </CardDescription>
-                </CardHeader>
+          <TabsContent value="map" className="space-y-6">
+            <FleetMap
+              bots={bots}
+              onMove={handleMapMove}
+              highlightedBotId={highlightedBotId}
+              onSelectBot={setHighlightedBotId}
+            />
+          </TabsContent>
 
-                <CardContent className="space-y-5">
-                  <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-                    <h3 className="text-sm font-semibold text-white">Current assignment</h3>
-                    {bot.currentOrder ? (
-                      <div className="mt-2 space-y-1 text-sm text-slate-200">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium">Order #{bot.currentOrder.orderNumber}</span>
-                          <Badge className="bg-slate-800 text-slate-200">
-                            {ORDER_STATUS_LABEL[bot.currentOrder.status] ??
-                              bot.currentOrder.status}
+          <TabsContent value="cards" className="space-y-6">
+            <div className="grid gap-6 lg:grid-cols-2">
+              {bots.map((bot) => {
+                const locationDraft = locationDrafts[bot.id] ?? bot.currentLocation;
+                const batteryDraft =
+                  batteryDrafts[bot.id] ??
+                  (bot.batteryLevel === null ? '' : String(bot.batteryLevel));
+
+                return (
+                  <Card
+                    key={bot.id}
+                    className={`glass-panel border-0 transition-all ${
+                      highlightedBotId === bot.id ? 'shadow-glow-sm ring-1 ring-primary/40' : ''
+                    }`}
+                    onMouseEnter={() => setHighlightedBotId(bot.id)}
+                    onMouseLeave={() => setHighlightedBotId(null)}
+                  >
+                    <CardHeader className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <CardTitle className="text-foreground">{bot.name}</CardTitle>
+                          <Badge
+                            className={`rounded-full border-0 px-2.5 py-1 ${STATUS_BADGE[bot.status]}`}
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              {STATUS_ICON[bot.status]} {STATUS_LABEL[bot.status]}
+                            </span>
                           </Badge>
                         </div>
-                        {bot.currentOrder.restaurant ? (
-                          <p className="text-xs text-slate-400">
-                            From{' '}
-                            <span className="text-slate-200">
-                              {bot.currentOrder.restaurant.name}
-                            </span>{' '}
-                            ({bot.currentOrder.restaurant.location})
-                          </p>
-                        ) : null}
-                        <p className="text-xs text-slate-400">
-                          Drop off:{' '}
-                          <span className="text-slate-200">
-                            {bot.currentOrder.deliveryLocation}
-                          </span>
-                        </p>
-                        {bot.currentOrder.customer ? (
-                          <p className="text-xs text-slate-400">
-                            Customer:{' '}
-                            <span className="text-slate-200">
-                              {bot.currentOrder.customer.firstName}{' '}
-                              {bot.currentOrder.customer.lastName}
-                            </span>{' '}
-                            ({bot.currentOrder.customer.email})
-                          </p>
-                        ) : null}
-                        <p className="text-xs text-slate-500">
-                          Placed {new Date(bot.currentOrder.placedAt).toLocaleString()}
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-slate-400">
-                        No active order. Bot is available for dispatch.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label className="text-xs uppercase tracking-wider text-slate-400">
-                        Status
-                      </Label>
-                      <Select
-                        value={bot.status}
-                        onValueChange={(value) =>
-                          patchBot(bot.id, { status: value as BotStatus })
-                        }
-                        disabled={updatingBotId === bot.id}
-                      >
-                        <SelectTrigger className="border-slate-700 bg-slate-950/40 text-slate-100">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {BOT_STATUSES.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {STATUS_LABEL[status]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-xs uppercase tracking-wider text-slate-400">
-                        Current location
-                      </Label>
-                      <div className="flex gap-2">
-                        <Input
-                          value={locationDraft}
-                          onChange={(event) =>
-                            setLocationDrafts((prev) => ({
-                              ...prev,
-                              [bot.id]: event.target.value,
-                            }))
-                          }
-                          className="border-slate-700 bg-slate-950/40 text-slate-100"
-                          placeholder="e.g. Plant Hall South"
+                        <BatteryIndicator
+                          level={bot.batteryLevel}
+                          charging={bot.status === 'CHARGING'}
                         />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-slate-700 text-slate-100"
-                          disabled={
-                            updatingBotId === bot.id ||
-                            !locationDraft.trim() ||
-                            locationDraft === bot.currentLocation
-                          }
-                          onClick={() =>
-                            patchBot(bot.id, { currentLocation: locationDraft.trim() })
-                          }
-                        >
-                          Save
-                        </Button>
                       </div>
-                    </div>
+                      <CardDescription className="flex flex-wrap items-center gap-3">
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-4 w-4 text-muted-foreground/60" />
+                          {bot.currentLocation}
+                        </span>
+                        <span className="text-muted-foreground/50">•</span>
+                        <span className="text-xs text-muted-foreground">
+                          Home: {bot.primaryLocation}
+                        </span>
+                        <span className="text-muted-foreground/50">•</span>
+                        <span className="text-xs text-muted-foreground">
+                          Heartbeat: {formatRelative(bot.lastHeartbeatAt)}
+                        </span>
+                      </CardDescription>
+                    </CardHeader>
 
-                    <div className="space-y-2 md:col-span-2">
-                      <Label className="text-xs uppercase tracking-wider text-slate-400">
-                        Battery level (0–100)
-                      </Label>
-                      <div className="flex gap-2">
-                        <Input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={batteryDraft}
-                          onChange={(event) =>
-                            setBatteryDrafts((prev) => ({
-                              ...prev,
-                              [bot.id]: event.target.value,
-                            }))
-                          }
-                          className="border-slate-700 bg-slate-950/40 text-slate-100"
-                        />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-slate-700 text-slate-100"
-                          disabled={updatingBotId === bot.id}
-                          onClick={() => {
-                            const parsed = batteryDraft.trim() === '' ? null : Number(batteryDraft);
-                            patchBot(bot.id, { batteryLevel: parsed });
-                          }}
-                        >
-                          Save
-                        </Button>
+                    <CardContent className="space-y-5">
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                        <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                          Current assignment
+                        </h3>
+                        {bot.currentOrder ? (
+                          <div className="mt-3 space-y-1.5 text-sm text-foreground/90">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">
+                                Order #{bot.currentOrder.orderNumber}
+                              </span>
+                              <Badge className="rounded-full border-0 bg-white/[0.06] text-xs text-muted-foreground">
+                                {ORDER_STATUS_LABEL[bot.currentOrder.status] ??
+                                  bot.currentOrder.status}
+                              </Badge>
+                            </div>
+                            {bot.currentOrder.restaurant ? (
+                              <p className="text-xs text-muted-foreground">
+                                From{' '}
+                                <span className="text-foreground">
+                                  {bot.currentOrder.restaurant.name}
+                                </span>{' '}
+                                ({bot.currentOrder.restaurant.location})
+                              </p>
+                            ) : null}
+                            <p className="text-xs text-muted-foreground">
+                              Drop off:{' '}
+                              <span className="text-foreground">
+                                {bot.currentOrder.deliveryLocation}
+                              </span>
+                            </p>
+                            {bot.currentOrder.customer ? (
+                              <p className="text-xs text-muted-foreground">
+                                Customer:{' '}
+                                <span className="text-foreground">
+                                  {bot.currentOrder.customer.firstName}{' '}
+                                  {bot.currentOrder.customer.lastName}
+                                </span>{' '}
+                                ({bot.currentOrder.customer.email})
+                              </p>
+                            ) : null}
+                            <p className="text-xs text-muted-foreground/80">
+                              Placed {new Date(bot.currentOrder.placedAt).toLocaleString()}
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            No active order. Bot is available for dispatch.
+                          </p>
+                        )}
                       </div>
-                    </div>
-                  </div>
 
-                  {bot.currentOrder ? (
-                    <Button
-                      asChild
-                      variant="ghost"
-                      size="sm"
-                      className="text-slate-300 hover:bg-slate-800/60 hover:text-white"
-                    >
-                      <Link href={`/track-package?order=${bot.currentOrder.orderNumber}` as any}>
-                        View customer tracking
-                      </Link>
-                    </Button>
-                  ) : null}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">
+                            Status
+                          </Label>
+                          <Select
+                            value={bot.status}
+                            onValueChange={(value) =>
+                              patchBot(bot.id, { status: value as BotStatus })
+                            }
+                            disabled={updatingBotId === bot.id}
+                          >
+                            <SelectTrigger className="rounded-xl border-white/10 bg-white/[0.04] text-foreground">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {BOT_STATUSES.map((status) => (
+                                <SelectItem key={status} value={status}>
+                                  {STATUS_LABEL[status]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">
+                            Current location
+                          </Label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={locationDraft}
+                              onChange={(event) =>
+                                setLocationDrafts((prev) => ({
+                                  ...prev,
+                                  [bot.id]: event.target.value,
+                                }))
+                              }
+                              placeholder="e.g. Plant Hall South"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="rounded-xl border-white/10 bg-white/[0.03] text-foreground hover:bg-white/[0.07]"
+                              disabled={
+                                updatingBotId === bot.id ||
+                                !locationDraft.trim() ||
+                                locationDraft === bot.currentLocation
+                              }
+                              onClick={() =>
+                                patchBot(bot.id, { currentLocation: locationDraft.trim() })
+                              }
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 md:col-span-2">
+                          <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">
+                            Battery level (0–100)
+                          </Label>
+                          <div className="flex gap-2">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={batteryDraft}
+                              onChange={(event) =>
+                                setBatteryDrafts((prev) => ({
+                                  ...prev,
+                                  [bot.id]: event.target.value,
+                                }))
+                              }
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="rounded-xl border-white/10 bg-white/[0.03] text-foreground hover:bg-white/[0.07]"
+                              disabled={updatingBotId === bot.id}
+                              onClick={() => {
+                                const parsed =
+                                  batteryDraft.trim() === '' ? null : Number(batteryDraft);
+                                patchBot(bot.id, { batteryLevel: parsed });
+                              }}
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {bot.currentOrder ? (
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="sm"
+                          className="rounded-full text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+                        >
+                          <Link href={`/track-package?order=${bot.currentOrder.orderNumber}` as any}>
+                            View customer tracking
+                          </Link>
+                        </Button>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );
@@ -492,13 +548,17 @@ const SummaryStat = ({
   icon: JSX.Element;
   accent?: string;
 }) => (
-  <Card className="border border-slate-800/60 bg-slate-900/70">
+  <Card className="glass-panel border-0">
     <CardContent className="flex items-center justify-between p-5">
       <div>
-        <p className="text-xs uppercase tracking-wider text-slate-400">{label}</p>
-        <p className={`text-3xl font-semibold ${accent ?? 'text-white'}`}>{value}</p>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">{label}</p>
+        <p className={`font-display text-3xl font-semibold ${accent ?? 'text-foreground'}`}>
+          {value}
+        </p>
       </div>
-      <div className="rounded-full bg-slate-800/60 p-3 text-slate-200">{icon}</div>
+      <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-foreground">
+        {icon}
+      </div>
     </CardContent>
   </Card>
 );

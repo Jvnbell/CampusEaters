@@ -12,6 +12,7 @@ import { MapPin, Package, CheckCircle2, Truck, Home, Bot, Clock, Loader2 } from 
 import { toast } from 'sonner';
 
 import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
+import { OrderReviewCard } from '@/components/OrderReviewCard';
 
 type OrderWithRelations = Order & {
   restaurant: {
@@ -440,6 +441,11 @@ const TrackDelivery = () => {
                             <span className="text-sm font-semibold text-white">${orderTotal.toFixed(2)}</span>
                           </div>
                         </div>
+
+                        <OrderReviewCard
+                          orderNumber={order.orderNumber}
+                          restaurantName={order.restaurant.name}
+                        />
                       </CardContent>
                     </Card>
                   );

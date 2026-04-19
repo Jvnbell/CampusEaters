@@ -11,6 +11,21 @@ type PatchBody = {
   status?: BotStatus;
   currentLocation?: string;
   batteryLevel?: number | null;
+  positionX?: number | null;
+  positionY?: number | null;
+};
+
+type ParseResult =
+  | { ok: true; value: number | null; error?: undefined }
+  | { ok: false; value?: undefined; error: string };
+
+const parsePercent = (value: unknown, label: string): ParseResult => {
+  if (value === null) return { ok: true, value: null };
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || n > 100) {
+    return { ok: false, error: `${label} must be a number between 0 and 100.` };
+  }
+  return { ok: true, value: Math.round(n * 100) / 100 };
 };
 
 /**
@@ -68,12 +83,23 @@ export async function PATCH(
     }
   }
 
+  if (body.positionX !== undefined) {
+    const parsed = parsePercent(body.positionX, 'positionX');
+    if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    update.position_x = parsed.value ?? null;
+  }
+  if (body.positionY !== undefined) {
+    const parsed = parsePercent(body.positionY, 'positionY');
+    if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    update.position_y = parsed.value ?? null;
+  }
+
   const { data, error } = await supabaseAdmin
     .from('bots')
     .update(update)
     .eq('id', context.params.botId)
     .select(
-      'id, name, status, primary_location, current_location, battery_level, last_heartbeat_at, created_at, updated_at',
+      'id, name, status, primary_location, current_location, battery_level, last_heartbeat_at, position_x, position_y, created_at, updated_at',
     )
     .maybeSingle();
 

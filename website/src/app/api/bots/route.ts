@@ -24,7 +24,7 @@ export async function GET() {
   const { data: bots, error: botsError } = await supabaseAdmin
     .from('bots')
     .select(
-      'id, name, status, primary_location, current_location, battery_level, last_heartbeat_at, created_at, updated_at',
+      'id, name, status, primary_location, current_location, battery_level, last_heartbeat_at, position_x, position_y, created_at, updated_at',
     )
     .order('name', { ascending: true });
 
