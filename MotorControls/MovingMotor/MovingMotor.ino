@@ -84,7 +84,7 @@ void updateGyro() {
   int16_t ax, ay, az, gx, gy, gz;
   mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   float gzCorrected = gz - gzOffset;
-  heading += (gzCorrected / 131.0) * dt;
+  heading += -(gzCorrected / 64.0) * dt;
 }
 
 // ── Gyro-based turn ───────────────────────────────────────────
@@ -182,6 +182,12 @@ void setup() {
 
   Wire.begin();
   mpu.initialize();
+
+  mpu.setFullScaleGyroRange(0);
+
+  // Verify it took
+  Serial.print("Gyro range setting: ");
+  Serial.println(mpu.getFullScaleGyroRange());
   if (mpu.testConnection()) {
     Serial.println("MPU6050 connected.");
     calibrateGyro();
@@ -280,6 +286,7 @@ void loop() {
 
   delay(rampDelay);
 }
+
 
 void handleCommand(String input) {
   if (input == "?" || input == "help") {
