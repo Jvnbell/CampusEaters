@@ -220,31 +220,31 @@ const DeliveryRequest = () => {
   };
 
   return (
-    <Card className="mx-auto w-full max-w-2xl">
-      <CardHeader>
-        <div className="mb-2 flex items-center gap-2">
-          <Package className="h-6 w-6 text-primary" />
-          <CardTitle>New Delivery Request</CardTitle>
+    <Card className="glass-panel-strong mx-auto w-full max-w-2xl border-0">
+      <CardHeader className="space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-aurora text-background shadow-glow-sm">
+            <Package className="h-5 w-5" strokeWidth={2.2} />
+          </span>
+          <CardTitle className="font-display text-xl">New delivery request</CardTitle>
         </div>
         <CardDescription>Select a restaurant and menu items to dispatch a delivery.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
           {!authUser && !authLoading ? (
-            <Card className="border border-amber-500/30 bg-amber-500/10">
-              <CardContent className="py-4">
-                <p className="text-sm text-amber-200">
-                  Please sign in to request a delivery. Your account is required to place orders.
-                </p>
-              </CardContent>
-            </Card>
+            <div className="rounded-2xl border border-warning/30 bg-warning/10 p-4">
+              <p className="text-sm text-warning">
+                Please sign in to request a delivery. Your account is required to place orders.
+              </p>
+            </div>
           ) : null}
 
           {authLoading ? (
             <p className="text-sm text-muted-foreground">Checking your account…</p>
           ) : authUser && !currentUser ? (
-            <p className="text-sm text-amber-200">
-              We couldn’t find a matching CampusEats profile for {authUser.email}. Please contact an administrator.
+            <p className="text-sm text-warning">
+              We couldn&apos;t find a matching CampusEats profile for {authUser.email}. Please contact an administrator.
             </p>
           ) : null}
 
@@ -293,14 +293,18 @@ const DeliveryRequest = () => {
             {restaurantId === '' ? (
               <p className="text-sm text-muted-foreground">Select a restaurant to view available items.</p>
             ) : currentRestaurant && currentRestaurant.menuItems.length > 0 ? (
-              <div className="space-y-3 rounded-lg border border-slate-800/60 bg-slate-900/40 p-4">
+              <div className="space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                 {currentRestaurant.menuItems.map((item) => {
                   const isSelected = Boolean(selectedItems[item.id]);
                   const quantity = selectedItems[item.id] ?? 1;
                   return (
                     <div
                       key={item.id}
-                      className="flex flex-col gap-2 rounded-md border border-transparent bg-slate-900/60 p-3 transition hover:border-slate-700/80 md:flex-row md:items-center md:justify-between"
+                      className={`flex flex-col gap-2 rounded-xl border p-3 transition md:flex-row md:items-center md:justify-between ${
+                        isSelected
+                          ? 'border-primary/30 bg-primary/[0.06]'
+                          : 'border-transparent bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]'
+                      }`}
                     >
                       <label className="flex items-center gap-3">
                         <Checkbox
@@ -309,8 +313,8 @@ const DeliveryRequest = () => {
                           aria-label={`Select ${item.name}`}
                         />
                         <span>
-                          <span className="font-medium text-slate-100">{item.name}</span>
-                          <span className="ml-2 text-sm text-slate-400">${item.price}</span>
+                          <span className="font-medium text-foreground">{item.name}</span>
+                          <span className="ml-2 text-sm text-muted-foreground">${item.price}</span>
                         </span>
                       </label>
                       {isSelected && (
@@ -339,7 +343,7 @@ const DeliveryRequest = () => {
 
           <Button
             type="submit"
-            className="w-full"
+            className="btn-aurora w-full rounded-full font-semibold"
             disabled={
               isLoading ||
               isSubmitting ||
@@ -348,7 +352,7 @@ const DeliveryRequest = () => {
               Object.keys(selectedItems).length === 0
             }
           >
-            {isSubmitting ? 'Submitting…' : 'Place Delivery Order'}
+            {isSubmitting ? 'Submitting…' : 'Place delivery order'}
           </Button>
         </form>
       </CardContent>

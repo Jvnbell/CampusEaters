@@ -227,20 +227,22 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
 
   const HeadingIcon = copy.emptyState?.headingIcon === 'shieldCheck' ? ShieldCheck : Shield;
 
+  const baseCardClass = 'glass-panel-strong mx-auto w-full max-w-md p-1 text-foreground border-0 shadow-soft';
+
   if (isLoading) {
     return (
-      <Card className={className ?? 'mx-auto w-full max-w-md'}>
+      <Card className={className ?? baseCardClass}>
         <CardHeader>
-          <div className="mb-2 h-6 w-32 animate-pulse rounded-lg bg-muted" />
+          <div className="mb-2 h-6 w-32 animate-pulse rounded-lg bg-white/5" />
           <CardDescription>
-            <span className="inline-block h-4 w-48 animate-pulse rounded bg-muted" />
+            <span className="inline-block h-4 w-48 animate-pulse rounded bg-white/5" />
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            <div className="h-10 w-full animate-pulse rounded-lg bg-muted" />
-            <div className="h-10 w-full animate-pulse rounded-lg bg-muted" />
-            <div className="h-10 w-full animate-pulse rounded-lg bg-muted" />
+            <div className="h-10 w-full animate-pulse rounded-lg bg-white/5" />
+            <div className="h-10 w-full animate-pulse rounded-lg bg-white/5" />
+            <div className="h-10 w-full animate-pulse rounded-lg bg-white/5" />
           </div>
         </CardContent>
       </Card>
@@ -249,11 +251,13 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
 
   if (user) {
     return (
-      <Card className={className ?? 'mx-auto w-full max-w-md'}>
-        <CardHeader>
-          <div className="mb-2 flex items-center gap-2">
-            <ShieldCheck className="h-6 w-6 text-primary" />
-            <CardTitle>{copy.signedIn.title}</CardTitle>
+      <Card className={className ?? baseCardClass}>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-aurora text-background shadow-glow-sm">
+              <ShieldCheck className="h-5 w-5" strokeWidth={2.2} />
+            </span>
+            <CardTitle className="font-display text-xl">{copy.signedIn.title}</CardTitle>
           </div>
           <CardDescription className="text-sm text-muted-foreground">
             Signed in as <span className="font-medium text-foreground">{user.email}</span>
@@ -261,7 +265,11 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">{copy.signedIn.body}</p>
-          <Button onClick={handleSignOut} className="w-full" disabled={isSubmitting}>
+          <Button
+            onClick={handleSignOut}
+            className="btn-aurora w-full rounded-full font-semibold"
+            disabled={isSubmitting}
+          >
             Sign out
           </Button>
         </CardContent>
@@ -270,17 +278,21 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
   }
 
   return (
-    <Card className={className ?? 'mx-auto w-full max-w-md'}>
-      <CardHeader>
-        <div className="mb-2 flex items-center gap-2">
-          <HeadingIcon className="h-6 w-6 text-primary" />
-          <CardTitle>{authMode === 'signIn' ? copy.titles.signIn : copy.titles.signUp}</CardTitle>
+    <Card className={className ?? baseCardClass}>
+      <CardHeader className="space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-aurora text-background shadow-glow-sm">
+            <HeadingIcon className="h-5 w-5" strokeWidth={2.2} />
+          </span>
+          <CardTitle className="font-display text-xl">
+            {authMode === 'signIn' ? copy.titles.signIn : copy.titles.signUp}
+          </CardTitle>
         </div>
-        <CardDescription>
+        <CardDescription className="text-sm text-muted-foreground">
           {authMode === 'signIn' ? copy.descriptions.signIn : copy.descriptions.signUp}
         </CardDescription>
         {copy.cardDescription ? (
-          <p className="text-sm text-muted-foreground">{copy.cardDescription}</p>
+          <p className="text-xs text-muted-foreground/80">{copy.cardDescription}</p>
         ) : null}
       </CardHeader>
       <CardContent>
@@ -362,7 +374,11 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            className="btn-aurora w-full rounded-full font-semibold"
+            disabled={isSubmitting}
+          >
             {isSubmitting ? 'Please wait…' : authMode === 'signIn' ? 'Sign in' : 'Sign up'}
           </Button>
 

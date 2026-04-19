@@ -175,17 +175,28 @@ export default function ResetPasswordPage() {
     window.location.hash && 
     (window.location.hash.includes('access_token') || window.location.hash.includes('type=recovery'));
 
+  const pageWrapperClass =
+    'relative isolate flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16';
+  const ambient = (
+    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+      <div className="absolute -top-32 left-1/2 h-[420px] w-[820px] -translate-x-1/2 rounded-full bg-gradient-aurora opacity-15 blur-3xl" />
+    </div>
+  );
+  const cardClass = 'glass-panel-strong mx-auto w-full max-w-md border-0 shadow-soft';
+
   if (isLoading && !hasTokenInUrl) {
-    // If loading and no token, show error message
     return (
-      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-slate-950/80 px-4 py-16">
-        <Card className="mx-auto w-full max-w-md">
-          <CardHeader>
-            <div className="mb-2 flex items-center gap-2">
-              <Shield className="h-6 w-6 text-primary" />
-              <CardTitle>Invalid Reset Link</CardTitle>
+      <div className={pageWrapperClass}>
+        {ambient}
+        <Card className={cardClass}>
+          <CardHeader className="space-y-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-aurora text-background shadow-glow-sm">
+                <Shield className="h-5 w-5" strokeWidth={2.2} />
+              </span>
+              <CardTitle className="font-display text-xl">Invalid reset link</CardTitle>
             </div>
-            <CardDescription>
+            <CardDescription className="text-sm text-muted-foreground">
               The password reset link is invalid or has expired.
             </CardDescription>
           </CardHeader>
@@ -194,11 +205,15 @@ export default function ResetPasswordPage() {
               Please request a new password reset link from the forgot password page.
             </p>
             <div className="flex flex-col gap-2">
-              <Button asChild className="w-full">
-                <Link href="/forgot-password">Request New Reset Link</Link>
+              <Button asChild className="btn-aurora w-full rounded-full font-semibold">
+                <Link href="/forgot-password">Request new reset link</Link>
               </Button>
-              <Button asChild variant="outline" className="w-full">
-                <Link href="/login">Back to Sign In</Link>
+              <Button
+                asChild
+                variant="outline"
+                className="w-full rounded-full border-white/15 bg-white/[0.03] text-foreground hover:bg-white/[0.07] hover:text-foreground"
+              >
+                <Link href="/login">Back to sign in</Link>
               </Button>
             </div>
           </CardContent>
@@ -209,12 +224,13 @@ export default function ResetPasswordPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-slate-950/80 px-4 py-16">
-        <Card className="mx-auto w-full max-w-md">
+      <div className={pageWrapperClass}>
+        {ambient}
+        <Card className={cardClass}>
           <CardHeader>
-            <div className="mb-2 h-6 w-32 animate-pulse rounded-lg bg-muted" />
+            <div className="mb-2 h-6 w-32 animate-pulse rounded-lg bg-white/5" />
             <CardDescription>
-              <span className="inline-block h-4 w-48 animate-pulse rounded bg-muted" />
+              <span className="inline-block h-4 w-48 animate-pulse rounded bg-white/5" />
             </CardDescription>
           </CardHeader>
         </Card>
@@ -223,19 +239,24 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-slate-950/80 px-4 py-16">
-      <Card className="mx-auto w-full max-w-md">
-        <CardHeader>
-          <div className="mb-2 flex items-center gap-2">
-            <Shield className="h-6 w-6 text-primary" />
-            <CardTitle>Reset Your Password</CardTitle>
+    <div className={pageWrapperClass}>
+      {ambient}
+      <Card className={cardClass}>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-aurora text-background shadow-glow-sm">
+              <Shield className="h-5 w-5" strokeWidth={2.2} />
+            </span>
+            <CardTitle className="font-display text-xl">Reset your password</CardTitle>
           </div>
-          <CardDescription>Enter your new password below.</CardDescription>
+          <CardDescription className="text-sm text-muted-foreground">
+            Enter your new password below.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="password">New Password</Label>
+              <Label htmlFor="password">New password</Label>
               <Input
                 id="password"
                 type="password"
@@ -249,7 +270,7 @@ export default function ResetPasswordPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm New Password</Label>
+              <Label htmlFor="confirmPassword">Confirm new password</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -262,13 +283,20 @@ export default function ResetPasswordPage() {
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? 'Resetting Password...' : 'Reset Password'}
+            <Button
+              type="submit"
+              className="btn-aurora w-full rounded-full font-semibold"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Resetting password…' : 'Reset password'}
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
               Remember your password?{' '}
-              <Link href="/login" className="font-medium text-primary underline-offset-4 hover:underline">
+              <Link
+                href="/login"
+                className="font-medium text-secondary underline-offset-4 hover:underline"
+              >
                 Sign in
               </Link>
             </p>

@@ -50,19 +50,27 @@ export const ForgotPasswordCard = () => {
     }
   };
 
+  const cardClass = 'glass-panel-strong mx-auto w-full max-w-md border-0 shadow-soft';
+
   if (isSent) {
     return (
-      <Card className="mx-auto w-full max-w-md">
-        <CardHeader>
-          <div className="mb-2 flex items-center gap-2">
-            <Shield className="h-6 w-6 text-primary" />
-            <CardTitle>Check Your Email</CardTitle>
+      <Card className={cardClass}>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-aurora text-background shadow-glow-sm">
+              <Shield className="h-5 w-5" strokeWidth={2.2} />
+            </span>
+            <CardTitle className="font-display text-xl">Check your email</CardTitle>
           </div>
-          <CardDescription>We&apos;ve sent a password reset link to {email}</CardDescription>
+          <CardDescription className="text-sm text-muted-foreground">
+            We&apos;ve sent a password reset link to{' '}
+            <span className="font-medium text-foreground">{email}</span>
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Click the link in the email to reset your password. The link will expire in 1 hour.
+            Click the link in the email to reset your password. The link will expire
+            in 1 hour.
           </p>
           <p className="text-sm text-muted-foreground">
             Didn&apos;t receive the email? Check your spam folder or try again.
@@ -74,12 +82,12 @@ export const ForgotPasswordCard = () => {
                 setIsSent(false);
                 setEmail('');
               }}
-              className="w-full"
+              className="w-full rounded-full border-white/15 bg-white/[0.03] text-foreground hover:bg-white/[0.07] hover:text-foreground"
             >
-              Send Another Email
+              Send another email
             </Button>
-            <Button asChild variant="ghost" className="w-full">
-              <Link href="/login">Back to Sign In</Link>
+            <Button asChild variant="ghost" className="w-full rounded-full text-muted-foreground hover:bg-white/[0.05] hover:text-foreground">
+              <Link href="/login">Back to sign in</Link>
             </Button>
           </div>
         </CardContent>
@@ -88,14 +96,17 @@ export const ForgotPasswordCard = () => {
   }
 
   return (
-    <Card className="mx-auto w-full max-w-md">
-      <CardHeader>
-        <div className="mb-2 flex items-center gap-2">
-          <Shield className="h-6 w-6 text-primary" />
-          <CardTitle>Forgot Password</CardTitle>
+    <Card className={cardClass}>
+      <CardHeader className="space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-aurora text-background shadow-glow-sm">
+            <Shield className="h-5 w-5" strokeWidth={2.2} />
+          </span>
+          <CardTitle className="font-display text-xl">Forgot password</CardTitle>
         </div>
-        <CardDescription>
-          Enter your email address and we&apos;ll send you a link to reset your password.
+        <CardDescription className="text-sm text-muted-foreground">
+          Enter your email address and we&apos;ll send you a link to reset your
+          password.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -113,13 +124,20 @@ export const ForgotPasswordCard = () => {
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? 'Sending...' : 'Send Reset Link'}
+          <Button
+            type="submit"
+            className="btn-aurora w-full rounded-full font-semibold"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Sending…' : 'Send reset link'}
           </Button>
 
           <p className="text-center text-sm text-muted-foreground">
             Remember your password?{' '}
-            <Link href="/login" className="font-medium text-primary underline-offset-4 hover:underline">
+            <Link
+              href="/login"
+              className="font-medium text-secondary underline-offset-4 hover:underline"
+            >
               Sign in
             </Link>
           </p>

@@ -40,12 +40,18 @@ export default function ForgotPasswordPage() {
   }, [router, supabase]);
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-slate-950/80 px-4 py-16">
+    <div className="relative isolate flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute -top-32 left-1/2 h-[420px] w-[820px] -translate-x-1/2 rounded-full bg-gradient-aurora opacity-15 blur-3xl" />
+      </div>
       <div className="w-full max-w-lg space-y-6">
         <div className="space-y-2 text-center">
-          <h1 className="text-3xl font-semibold text-white">Reset Your Password</h1>
-          <p className="text-sm text-slate-400">
-            Enter your email address and we&apos;ll send you a link to reset your password.
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
+            Reset your password
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Enter your email address and we&apos;ll send you a link to reset your
+            password.
           </p>
         </div>
         <ForgotPasswordCard />

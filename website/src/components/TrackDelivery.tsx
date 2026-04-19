@@ -135,35 +135,37 @@ const TrackDelivery = () => {
   }, [authUser, authLoading]);
 
   return (
-    <Card className="mx-auto w-full max-w-4xl">
-      <CardHeader>
-        <div className="mb-2 flex items-center gap-2">
-          <MapPin className="h-6 w-6 text-primary" />
-          <CardTitle>Your Deliveries</CardTitle>
+    <Card className="glass-panel-strong mx-auto w-full max-w-4xl border-0">
+      <CardHeader className="space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-aurora text-background shadow-glow-sm">
+            <MapPin className="h-5 w-5" strokeWidth={2.2} />
+          </span>
+          <CardTitle className="font-display text-xl">Your deliveries</CardTitle>
         </div>
         <CardDescription>Track active deliveries and browse your past order history.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {authLoading ? (
           <div className="flex justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <Loader2 className="h-6 w-6 animate-spin text-secondary" />
           </div>
         ) : !authUser ? (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-6 text-center text-sm text-amber-200">
+          <div className="rounded-2xl border border-warning/30 bg-warning/10 p-6 text-center text-sm text-warning">
             Sign in to see your deliveries and order history.
           </div>
         ) : isLoadingOrders ? (
           <div className="flex justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <Loader2 className="h-6 w-6 animate-spin text-secondary" />
           </div>
         ) : orders.length === 0 ? (
-          <div className="rounded-lg border border-slate-800/60 bg-slate-900/40 p-6 text-center">
-            <Clock className="mx-auto mb-3 h-10 w-10 text-slate-500" />
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
+            <Clock className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              You don’t have any deliveries yet. Place a new order to get started.
+              You don&apos;t have any deliveries yet. Place a new order to get started.
             </p>
-            <Button asChild className="mt-4">
-              <a href="/request-delivery">Request a Delivery</a>
+            <Button asChild className="btn-aurora mt-5 rounded-full font-semibold">
+              <a href="/request-delivery">Request a delivery</a>
             </Button>
           </div>
         ) : (
@@ -175,10 +177,10 @@ const TrackDelivery = () => {
 
             <TabsContent value="active" className="space-y-6">
               {activeOrders.length === 0 ? (
-                <div className="rounded-lg border border-slate-800/60 bg-slate-900/40 p-6 text-center">
-                  <Truck className="mx-auto mb-3 h-10 w-10 text-slate-500" />
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
+                  <Truck className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
-                    You don’t have any active deliveries right now. Check your history below.
+                    You don&apos;t have any active deliveries right now. Check your history below.
                   </p>
                 </div>
               ) : (
@@ -192,7 +194,7 @@ const TrackDelivery = () => {
                   }, 0);
 
                   return (
-                    <Card key={order.id} className="border border-slate-800/60 bg-slate-900/40">
+                    <Card key={order.id} className="glass-panel border-0">
                       <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                           <p className="text-xs uppercase tracking-wide text-muted-foreground">Tracking ID</p>
@@ -207,12 +209,12 @@ const TrackDelivery = () => {
                       </CardHeader>
                       <CardContent className="space-y-6">
                         <div className="grid gap-4 md:grid-cols-2">
-                          <div className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
+                          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
                             <h3 className="text-xs font-semibold uppercase tracking-wide text-white">Pickup</h3>
                             <p className="text-sm text-muted-foreground">{order.restaurant.name}</p>
                             <p className="text-sm text-muted-foreground">{order.restaurant.location}</p>
                           </div>
-                          <div className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
+                          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
                             <h3 className="text-xs font-semibold uppercase tracking-wide text-white">
                               Delivery Location
                             </h3>
@@ -220,7 +222,7 @@ const TrackDelivery = () => {
                           </div>
                         </div>
 
-                        <div className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
+                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
                           <h3 className="text-xs font-semibold uppercase tracking-wide text-white">Order Items</h3>
                           <div className="mt-3 space-y-2">
                             {order.orderItems.map((item) => (
@@ -235,7 +237,7 @@ const TrackDelivery = () => {
                               </div>
                             ))}
                           </div>
-                          <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-3">
+                          <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
                             <span className="text-xs font-semibold uppercase tracking-wide text-white">
                               Estimated Total
                             </span>
@@ -246,7 +248,7 @@ const TrackDelivery = () => {
                         <div className="space-y-2">
                           <h3 className="text-sm font-semibold text-white">Delivery Progress</h3>
                           <div className="flex items-center gap-3">
-                            <Progress value={progressValue} className="h-2 flex-1 bg-slate-800" />
+                            <Progress value={progressValue} className="h-2 flex-1 bg-white/[0.08]" />
                             <span className="text-xs text-muted-foreground">{Math.round(progressValue)}%</span>
                           </div>
                         </div>
@@ -263,7 +265,7 @@ const TrackDelivery = () => {
                                 <div
                                   key={`line-${step.status}`}
                                   className={`absolute left-6 w-0.5 transition-colors ${
-                                    isCompleted ? 'bg-green-600' : isActive ? 'bg-blue-500' : 'bg-slate-800'
+                                    isCompleted ? 'bg-success' : isActive ? 'bg-primary' : 'bg-white/10'
                                   }`}
                                   style={{
                                     top: `${index * 96 + 48}px`,
@@ -293,7 +295,7 @@ const TrackDelivery = () => {
                                           ? 'bg-green-600 text-white shadow-lg shadow-green-600/50'
                                           : isActive
                                           ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/50'
-                                          : 'bg-slate-800 text-slate-400'
+                                          : 'bg-white/[0.05] text-muted-foreground'
                                       } ${isActive ? 'animate-pulse' : ''}`}
                                     >
                                       <IconComponent className="h-6 w-6" />
@@ -355,7 +357,7 @@ const TrackDelivery = () => {
                           </div>
                         </div>
 
-                        <div className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
+                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
                           <h3 className="text-xs font-semibold uppercase tracking-wide text-white">Support</h3>
                           <p className="mt-2 text-xs text-muted-foreground">
                             Need help with this order? Contact{' '}
@@ -375,10 +377,10 @@ const TrackDelivery = () => {
 
             <TabsContent value="history" className="space-y-6">
               {pastOrders.length === 0 ? (
-                <div className="rounded-lg border border-slate-800/60 bg-slate-900/40 p-6 text-center">
-                  <Bot className="mx-auto mb-3 h-10 w-10 text-slate-500" />
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
+                  <Bot className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
-                    You haven’t completed any deliveries yet. Once orders are delivered they’ll appear here.
+                    You haven&apos;t completed any deliveries yet. Once orders are delivered they&apos;ll appear here.
                   </p>
                 </div>
               ) : (
@@ -390,7 +392,7 @@ const TrackDelivery = () => {
                   }, 0);
 
                   return (
-                    <Card key={order.id} className="border border-slate-800/60 bg-slate-900/40">
+                    <Card key={order.id} className="glass-panel border-0">
                       <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                           <p className="text-xs uppercase tracking-wide text-muted-foreground">Tracking ID</p>
@@ -403,12 +405,12 @@ const TrackDelivery = () => {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="grid gap-4 md:grid-cols-2">
-                          <div className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
+                          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
                             <h3 className="text-xs font-semibold uppercase tracking-wide text-white">Pickup</h3>
                             <p className="text-sm text-muted-foreground">{order.restaurant.name}</p>
                             <p className="text-sm text-muted-foreground">{order.restaurant.location}</p>
                           </div>
-                          <div className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
+                          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
                             <h3 className="text-xs font-semibold uppercase tracking-wide text-white">
                               Delivery Location
                             </h3>
@@ -416,7 +418,7 @@ const TrackDelivery = () => {
                           </div>
                         </div>
 
-                        <div className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
+                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
                           <h3 className="text-xs font-semibold uppercase tracking-wide text-white">Order Summary</h3>
                           <div className="mt-3 space-y-2">
                             {order.orderItems.map((item) => (
@@ -431,7 +433,7 @@ const TrackDelivery = () => {
                               </div>
                             ))}
                           </div>
-                          <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-3">
+                          <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
                             <span className="text-xs font-semibold uppercase tracking-wide text-white">
                               Total Paid
                             </span>

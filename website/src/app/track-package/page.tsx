@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Sparkles } from 'lucide-react';
 
 import TrackDelivery from '@/components/TrackDelivery';
 import { AuthGate } from '@/components/auth/AuthGate';
@@ -13,30 +13,38 @@ export const metadata: Metadata = {
 
 export default function TrackPackagePage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <header className="sticky top-0 z-50 border-b border-slate-700/50 bg-slate-900/50 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4">
-          <Button
-            asChild
-            variant="ghost"
-            className="text-slate-300 transition hover:bg-slate-800/50 hover:text-white"
-          >
-            <Link href="/">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Home
-            </Link>
-          </Button>
-        </div>
-      </header>
+    <div className="relative isolate min-h-[calc(100vh-4rem)]">
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute -top-32 left-1/2 h-[420px] w-[820px] -translate-x-1/2 rounded-full bg-gradient-aurora opacity-15 blur-3xl" />
+      </div>
 
-      <main className="container mx-auto px-4 py-16">
+      <div className="container mx-auto px-4 pt-6">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="rounded-full text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+        >
+          <Link href="/">
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Back to home
+          </Link>
+        </Button>
+      </div>
+
+      <main className="container mx-auto px-4 pb-20 pt-6">
         <div className="mx-auto max-w-4xl">
           <div className="mb-12 space-y-4 text-center">
-            <h1 className="text-4xl font-bold text-transparent md:text-5xl bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-600 bg-clip-text">
-              Track Your Package
+            <span className="eyebrow">
+              <Sparkles className="h-3.5 w-3.5" />
+              Real-time tracking
+            </span>
+            <h1 className="font-display text-4xl font-semibold tracking-tight text-foreground text-balance md:text-5xl">
+              Track your <span className="gradient-text">package</span>
             </h1>
-            <p className="mx-auto max-w-2xl text-xl text-slate-300">
-              Enter your tracking ID to see real-time updates on your delivery status and location.
+            <p className="mx-auto max-w-2xl text-lg text-muted-foreground text-pretty">
+              Watch live updates on your delivery status, location, and estimated
+              arrival time.
             </p>
           </div>
 
@@ -51,4 +59,3 @@ export default function TrackPackagePage() {
     </div>
   );
 }
-
