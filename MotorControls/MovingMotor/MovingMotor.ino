@@ -84,7 +84,7 @@ void updateGyro() {
   int16_t ax, ay, az, gx, gy, gz;
   mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   float gzCorrected = gz - gzOffset;
-  heading += -(gzCorrected / 64.0) * dt;
+  heading += (gzCorrected / 64.0) * dt;
 }
 
 // ── Gyro-based turn ───────────────────────────────────────────
