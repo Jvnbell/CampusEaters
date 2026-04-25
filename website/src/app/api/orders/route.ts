@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { NextResponse } from 'next/server';
 
 import { getAuthUserAndProfile, unauthorized } from '@/lib/api-auth';
@@ -6,6 +8,15 @@ import { sendOrderStatusEmail } from '@/lib/email';
 import { sendOrderStatusPush } from '@/lib/push';
 import { broadcastOrderUpdate } from '@/lib/realtime';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_SECONDS = 60;
+const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
+
+/** Stable SHA-256 of the request shape, used to reject key-reuse on different payloads. */
+function hashRequest(payload: unknown): string {
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
 
 type CreateOrderBody = {
   restaurantId: string;
@@ -56,6 +67,92 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as CreateOrderBody;
+
+    // ---- Idempotency-Key -------------------------------------------------
+    // If the client sends the same Idempotency-Key twice (network retry, a
+    // double-tap, etc.) we return the originally-created order instead of
+    // duplicating it. Different payloads under the same key are rejected so
+    // a reused key can't silently swallow a different request.
+    const rawIdempotencyKey = request.headers.get('Idempotency-Key');
+    const idempotencyKey =
+      rawIdempotencyKey && rawIdempotencyKey.trim().length > 0
+        ? rawIdempotencyKey.trim().slice(0, IDEMPOTENCY_KEY_MAX_LENGTH)
+        : null;
+    const requestHash = idempotencyKey ? hashRequest(body) : null;
+
+    if (idempotencyKey) {
+      const { data: existingKey, error: keyLookupError } = await supabaseAdmin
+        .from('idempotency_keys')
+        .select('order_id, request_hash')
+        .eq('user_id', auth.profile.id)
+        .eq('key', idempotencyKey)
+        .maybeSingle();
+
+      if (keyLookupError) {
+        console.error('[API /orders POST] Idempotency lookup failed', keyLookupError);
+      } else if (existingKey) {
+        if (existingKey.request_hash !== requestHash) {
+          return NextResponse.json(
+            {
+              error:
+                'Idempotency-Key has already been used with a different request body. Generate a new key and try again.',
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+            },
+            { status: 409 },
+          );
+        }
+        const { data: replayRow, error: replayError } = await supabaseAdmin
+          .from('orders')
+          .select(ORDER_WITH_RELATIONS_SELECT)
+          .eq('id', existingKey.order_id)
+          .maybeSingle();
+        if (!replayError && replayRow) {
+          const replayed = mapOrderWithRelations(
+            replayRow as Parameters<typeof mapOrderWithRelations>[0],
+          );
+          return NextResponse.json(
+            { order: replayed, idempotentReplay: true },
+            {
+              status: 200,
+              headers: { 'Idempotent-Replay': 'true' },
+            },
+          );
+        }
+      }
+    }
+
+    // ---- Sliding-window rate limit --------------------------------------
+    const { data: rateData, error: rateError } = await supabaseAdmin.rpc(
+      'check_order_rate_limit',
+      {
+        p_user_id: auth.profile.id,
+        p_max: RATE_LIMIT_MAX,
+        p_window_seconds: RATE_LIMIT_WINDOW_SECONDS,
+      },
+    );
+    if (rateError) {
+      console.error('[API /orders POST] Rate-limit check failed', rateError);
+    } else if (rateData && (rateData as { allowed?: boolean }).allowed === false) {
+      const resetAt = (rateData as { reset_at?: string }).reset_at;
+      const retryAfterSeconds = resetAt
+        ? Math.max(1, Math.ceil((Date.parse(resetAt) - Date.now()) / 1000))
+        : RATE_LIMIT_WINDOW_SECONDS;
+      return NextResponse.json(
+        {
+          error: `Rate limit exceeded: max ${RATE_LIMIT_MAX} orders per ${RATE_LIMIT_WINDOW_SECONDS}s. Try again shortly.`,
+          code: 'RATE_LIMIT_EXCEEDED',
+          retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(retryAfterSeconds),
+            'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
+            'X-RateLimit-Remaining': '0',
+          },
+        },
+      );
+    }
 
     const restaurantId = String(body.restaurantId ?? '').trim();
     const deliveryLocation =
@@ -206,6 +303,20 @@ export async function POST(request: Request) {
     }
 
     const order = mapOrderWithRelations(orderRow as Parameters<typeof mapOrderWithRelations>[0]);
+
+    if (idempotencyKey && requestHash) {
+      // Fire-and-forget — a failure here just means a retry won't dedupe,
+      // not that the order creation failed.
+      const { error: keyInsertError } = await supabaseAdmin.from('idempotency_keys').insert({
+        user_id: auth.profile.id,
+        key: idempotencyKey,
+        order_id: order.id,
+        request_hash: requestHash,
+      });
+      if (keyInsertError) {
+        console.error('[API /orders POST] Failed to record idempotency key', keyInsertError);
+      }
+    }
 
     if (order.user) {
       console.log('[API /orders POST] Sending order confirmation email...');

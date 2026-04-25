@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 
 import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
 import { OrderReviewCard } from '@/components/OrderReviewCard';
+import { OrderEta } from '@/components/OrderEta';
 
 type OrderWithRelations = Order & {
   restaurant: {
@@ -204,9 +205,12 @@ const TrackDelivery = () => {
                             Placed on {new Date(order.placedAt).toLocaleString()}
                           </p>
                         </div>
-                        <Badge className={`${statusBadgeMap[order.status]} text-white`}>
-                          {statusFriendlyText[order.status]}
-                        </Badge>
+                        <div className="flex flex-col items-end gap-2">
+                          <Badge className={`${statusBadgeMap[order.status]} text-white`}>
+                            {statusFriendlyText[order.status]}
+                          </Badge>
+                          <OrderEta orderNumber={order.orderNumber} />
+                        </div>
                       </CardHeader>
                       <CardContent className="space-y-6">
                         <div className="grid gap-4 md:grid-cols-2">

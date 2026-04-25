@@ -27,6 +27,7 @@ const adminNavLinks = [
   { href: '/', label: 'Home' },
   { href: '/restaurants', label: 'Restaurants' },
   { href: '/operations', label: 'Operations' },
+  { href: '/admin/analytics', label: 'Analytics' },
 ];
 
 const marketingNavLinks = [

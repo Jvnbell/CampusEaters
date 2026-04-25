@@ -102,6 +102,101 @@ export type DeviceTokenRow = {
   updated_at: string;
 };
 
+export type OrderEventRow = {
+  id: number;
+  order_id: string;
+  event: 'created' | 'status_changed' | 'bot_assigned';
+  old_status: OrderStatus | null;
+  new_status: OrderStatus | null;
+  old_bot_id: string | null;
+  new_bot_id: string | null;
+  meta: Record<string, unknown> | null;
+  created_at: string;
+};
+
+// ---------------------------------------------------------------------------
+// Camel-case shapes for CS-feature RPCs: dispatcher, analytics, ETA.
+// ---------------------------------------------------------------------------
+
+export type DispatchAssignment = {
+  orderId: string;
+  orderNumber: number;
+  botId: string;
+  botName: string;
+  score: number;
+  battery: number | null;
+};
+
+export type DispatchResult = {
+  consideredOrders: number;
+  assigned: number;
+  unassigned: number;
+  assignments: DispatchAssignment[];
+  dispatchedAt: string;
+};
+
+export type DeliveryEta = {
+  seconds: number | null;
+  sampleSize: number;
+  source: 'restaurant' | 'global' | 'none';
+};
+
+export type AnalyticsDaily = {
+  day: string;
+  ordersPlaced: number;
+  ordersDelivered: number;
+  avgDeliverySeconds: number;
+};
+
+export type AnalyticsPercentiles = {
+  p50: number | null;
+  p90: number | null;
+  p95: number | null;
+  p99: number | null;
+  samples: number;
+};
+
+export type AnalyticsTopRestaurant = {
+  restaurantId: string;
+  name: string;
+  orders: number;
+  avgRating: number;
+  reviewCount: number;
+};
+
+export type AnalyticsFleetStatus = {
+  status: BotStatus;
+  count: number;
+};
+
+export type AnalyticsTotals = {
+  ordersPlaced: number;
+  ordersDelivered: number;
+  avgDeliverySeconds: number | null;
+  activeBots: number;
+};
+
+export type FleetAnalytics = {
+  windowDays: number;
+  generatedAt: string;
+  totals: AnalyticsTotals;
+  daily: AnalyticsDaily[];
+  percentiles: AnalyticsPercentiles;
+  topRestaurants: AnalyticsTopRestaurant[];
+  fleetStatus: AnalyticsFleetStatus[];
+};
+
+export type OrderEvent = {
+  id: number;
+  orderId: string;
+  event: OrderEventRow['event'];
+  oldStatus: OrderStatus | null;
+  newStatus: OrderStatus | null;
+  oldBotId: string | null;
+  newBotId: string | null;
+  createdAt: string;
+};
+
 export type OrderRow = {
   id: string;
   order_number: number;

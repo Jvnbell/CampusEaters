@@ -7,7 +7,9 @@ import {
   Battery,
   BatteryCharging,
   BatteryLow,
+  BarChart3,
   CheckCircle2,
+  ClipboardList,
   Hammer,
   LayoutGrid,
   Map as MapIcon,
@@ -19,6 +21,7 @@ import {
   Truck,
   Wifi,
   WifiOff,
+  Zap,
 } from 'lucide-react';
 
 import { FleetMap } from '@/components/FleetMap';
@@ -43,7 +46,21 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCurrentProfile } from '@/hooks/use-current-profile';
-import { BOT_STATUSES, type BotStatus, type BotWithCurrentOrder } from '@/types/db';
+import {
+  BOT_STATUSES,
+  type BotStatus,
+  type BotWithCurrentOrder,
+  type DispatchResult,
+  type OrderEvent,
+} from '@/types/db';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 
 const STATUS_LABEL: Record<BotStatus, string> = {
   IDLE: 'Idle',
@@ -134,6 +151,11 @@ export const OperationsConsole = () => {
   const [locationDrafts, setLocationDrafts] = useState<Record<string, string>>({});
   const [batteryDrafts, setBatteryDrafts] = useState<Record<string, string>>({});
   const [highlightedBotId, setHighlightedBotId] = useState<string | null>(null);
+  const [isDispatching, setIsDispatching] = useState(false);
+  const [lastDispatch, setLastDispatch] = useState<DispatchResult | null>(null);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditEvents, setAuditEvents] = useState<OrderEvent[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const fetchBots = useCallback(async () => {
     setIsFetching(true);
@@ -210,6 +232,62 @@ export const OperationsConsole = () => {
     [patchBot],
   );
 
+  const handleDispatch = useCallback(async () => {
+    setIsDispatching(true);
+    try {
+      const response = await fetch('/api/admin/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minBattery: 20 }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error ?? 'Dispatch failed');
+      }
+      const result = (await response.json()) as DispatchResult;
+      setLastDispatch(result);
+      if (result.assigned === 0 && result.unassigned === 0) {
+        toast.info('No pending orders to dispatch.');
+      } else if (result.assigned === 0) {
+        toast.warning(`No idle bots available — ${result.unassigned} order(s) still waiting.`);
+      } else {
+        toast.success(
+          `Dispatched ${result.assigned} order${result.assigned === 1 ? '' : 's'}.`,
+        );
+      }
+      await fetchBots();
+    } catch (error) {
+      console.error('[OperationsConsole] dispatch failed', error);
+      toast.error(error instanceof Error ? error.message : 'Dispatch failed.');
+    } finally {
+      setIsDispatching(false);
+    }
+  }, [fetchBots]);
+
+  const loadAudit = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const response = await fetch(`/api/admin/audit?limit=50&t=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error ?? 'Failed to load audit log');
+      }
+      const json = (await response.json()) as { events: OrderEvent[] };
+      setAuditEvents(json.events);
+    } catch (error) {
+      console.error('[OperationsConsole] audit load failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to load audit log.');
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (auditOpen) void loadAudit();
+  }, [auditOpen, loadAudit]);
+
   if (profileLoading) {
     return (
       <div className="space-y-4">
@@ -264,23 +342,140 @@ export const OperationsConsole = () => {
         />
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-display text-xl font-semibold text-foreground">Fleet status</h2>
           <p className="text-sm text-muted-foreground">
             Auto-refreshing every 15 seconds. Drag bots on the map to update their live positions.
           </p>
         </div>
-        <Button
-          variant="outline"
-          className="rounded-full border-white/10 bg-white/[0.03] text-foreground hover:bg-white/[0.07]"
-          onClick={fetchBots}
-          disabled={isFetching}
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="rounded-full border-white/10 bg-white/[0.03] text-foreground hover:bg-white/[0.07]"
+          >
+            <Link href={'/admin/analytics' as any}>
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Analytics
+            </Link>
+          </Button>
+          <Sheet open={auditOpen} onOpenChange={setAuditOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full border-white/10 bg-white/[0.03] text-foreground hover:bg-white/[0.07]"
+              >
+                <ClipboardList className="mr-2 h-4 w-4" />
+                Audit log
+              </Button>
+            </SheetTrigger>
+            <SheetContent className="w-full max-w-md overflow-y-auto bg-background/95 sm:max-w-lg">
+              <SheetHeader>
+                <SheetTitle className="text-foreground">Order audit log</SheetTitle>
+                <SheetDescription>
+                  Append-only event stream from <code className="text-xs">order_events</code>.
+                  Inserts and deletes are blocked at the database level.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="mt-6 space-y-2">
+                {auditLoading ? (
+                  <Skeleton className="h-40 w-full bg-white/5" />
+                ) : auditEvents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No events yet.</p>
+                ) : (
+                  auditEvents.map((event) => (
+                    <div
+                      key={event.id}
+                      className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <Badge className="rounded-full border-0 bg-white/[0.06] text-[10px] uppercase tracking-wider text-muted-foreground">
+                          {event.event.replace(/_/g, ' ')}
+                        </Badge>
+                        <span className="text-muted-foreground/70">
+                          {new Date(event.createdAt).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                        order {event.orderId.slice(0, 8)}…
+                      </p>
+                      {event.event === 'status_changed' ? (
+                        <p className="mt-1 text-foreground/90">
+                          {event.oldStatus ?? '∅'} → {event.newStatus ?? '∅'}
+                        </p>
+                      ) : null}
+                      {event.event === 'bot_assigned' ? (
+                        <p className="mt-1 text-foreground/90">
+                          bot {event.oldBotId ? event.oldBotId.slice(0, 8) + '…' : '∅'} →{' '}
+                          {event.newBotId ? event.newBotId.slice(0, 8) + '…' : '∅'}
+                        </p>
+                      ) : null}
+                      {event.event === 'created' ? (
+                        <p className="mt-1 text-foreground/90">
+                          initial status {event.newStatus ?? '∅'}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+          <Button
+            size="sm"
+            className="btn-aurora rounded-full font-semibold"
+            onClick={handleDispatch}
+            disabled={isDispatching}
+          >
+            <Zap className={`mr-2 h-4 w-4 ${isDispatching ? 'animate-pulse' : ''}`} />
+            {isDispatching ? 'Dispatching…' : 'Dispatch idle bots'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full border-white/10 bg-white/[0.03] text-foreground hover:bg-white/[0.07]"
+            onClick={fetchBots}
+            disabled={isFetching}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
+
+      {lastDispatch && lastDispatch.assignments.length > 0 ? (
+        <Card className="glass-panel border-primary/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base text-foreground">
+              <Zap className="h-4 w-4 text-primary" /> Dispatcher result
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Greedy matcher with <code>FOR UPDATE SKIP LOCKED</code> · considered{' '}
+              {lastDispatch.consideredOrders} · assigned{' '}
+              <span className="font-semibold text-foreground">{lastDispatch.assigned}</span> ·
+              unassigned{' '}
+              <span className="font-semibold text-foreground">{lastDispatch.unassigned}</span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1.5 text-xs">
+            {lastDispatch.assignments.slice(0, 6).map((a) => (
+              <div
+                key={a.orderId}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-1.5"
+              >
+                <span className="font-mono text-muted-foreground">#{a.orderNumber}</span>
+                <span className="text-foreground">{a.botName}</span>
+                <span className="text-muted-foreground">
+                  cost {a.score.toFixed(2)} · battery {a.battery ?? '—'}%
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {bots.length === 0 ? (
         <Card className="glass-panel-strong border-0">
