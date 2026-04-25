@@ -2,14 +2,12 @@ import { NextResponse } from 'next/server';
 
 import { mapRestaurantWithMenuAndRating, mapReview } from '@/lib/db/mappers';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import type { RestaurantRatingRow } from '@/types/db';
 
 /** Detail endpoint for the public restaurant browse / detail pages. */
 export const dynamic = 'force-dynamic';
 
-const RESTAURANT_DETAIL_SELECT =
-  'id, name, location, ' +
-  'menu_items(id, name, price), ' +
-  'restaurant_ratings(review_count, average_rating)';
+const RESTAURANT_DETAIL_SELECT = 'id, name, location, menu_items(id, name, price)';
 
 const REVIEW_SELECT = `
   id, order_id, user_id, restaurant_id, rating, comment, created_at, updated_at,
@@ -25,40 +23,56 @@ export async function GET(
     return NextResponse.json({ error: 'Restaurant ID is required.' }, { status: 400 });
   }
 
-  // Restaurant + menu + rating aggregate in one round trip.
-  const { data: restaurant, error: restaurantError } = await supabaseAdmin
-    .from('restaurants')
-    .select(RESTAURANT_DETAIL_SELECT)
-    .eq('id', restaurantId)
-    .maybeSingle();
+  // Three parallel reads. We can't embed `restaurant_ratings(...)` into the
+  // restaurants select because PostgREST does not auto-detect FK relationships
+  // for views (see /api/restaurants list endpoint), so we fetch the rating
+  // aggregate as a separate query and merge in JS.
+  const [restaurantResult, ratingResult, reviewsResult] = await Promise.all([
+    supabaseAdmin
+      .from('restaurants')
+      .select(RESTAURANT_DETAIL_SELECT)
+      .eq('id', restaurantId)
+      .maybeSingle(),
+    supabaseAdmin
+      .from('restaurant_ratings')
+      .select('restaurant_id, review_count, average_rating')
+      .eq('restaurant_id', restaurantId)
+      .maybeSingle(),
+    supabaseAdmin
+      .from('reviews')
+      .select(REVIEW_SELECT)
+      .eq('restaurant_id', restaurantId)
+      .order('created_at', { ascending: false })
+      .limit(50),
+  ]);
 
-  if (restaurantError) {
-    console.error('[api/restaurants/:id GET] restaurant lookup failed', restaurantError);
+  if (restaurantResult.error) {
+    console.error('[api/restaurants/:id GET] restaurant lookup failed', restaurantResult.error);
     return NextResponse.json({ error: 'Failed to load restaurant.' }, { status: 500 });
   }
-  if (!restaurant) {
+  if (!restaurantResult.data) {
     return NextResponse.json({ error: 'Restaurant not found.' }, { status: 404 });
   }
-
-  // Most recent 50 reviews — enough for the "recent reviews" section without
-  // paginating yet. Reviewer names are joined for display.
-  const { data: reviewsData, error: reviewsError } = await supabaseAdmin
-    .from('reviews')
-    .select(REVIEW_SELECT)
-    .eq('restaurant_id', restaurantId)
-    .order('created_at', { ascending: false })
-    .limit(50);
-
-  if (reviewsError) {
-    console.error('[api/restaurants/:id GET] reviews lookup failed', reviewsError);
+  if (reviewsResult.error) {
+    console.error('[api/restaurants/:id GET] reviews lookup failed', reviewsResult.error);
     return NextResponse.json({ error: 'Failed to load reviews.' }, { status: 500 });
   }
+  if (ratingResult.error) {
+    // Best-effort; restaurant should still load even if the aggregate view query fails.
+    console.error('[api/restaurants/:id GET] rating lookup failed', ratingResult.error);
+  }
+
+  const ratingRow = (ratingResult.data ?? null) as RestaurantRatingRow | null;
+  const restaurantWithRating = {
+    ...(restaurantResult.data as Parameters<typeof mapRestaurantWithMenuAndRating>[0]),
+    restaurant_ratings: ratingRow
+      ? { review_count: ratingRow.review_count, average_rating: ratingRow.average_rating }
+      : null,
+  };
 
   const response = NextResponse.json({
-    restaurant: mapRestaurantWithMenuAndRating(
-      restaurant as unknown as Parameters<typeof mapRestaurantWithMenuAndRating>[0],
-    ),
-    reviews: (reviewsData ?? []).map((row) =>
+    restaurant: mapRestaurantWithMenuAndRating(restaurantWithRating),
+    reviews: (reviewsResult.data ?? []).map((row) =>
       mapReview(row as unknown as Parameters<typeof mapReview>[0]),
     ),
   });
