@@ -3,6 +3,10 @@ module.exports = {
   // NativeWind v4: scan every screen + component file for classnames.
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   presets: [require('nativewind/preset')],
+  // App is hard-locked to dark mode (see app.json `userInterfaceStyle`), so we
+  // opt out of NativeWind's media-query dark mode (which can't be set
+  // programmatically and was logging a warning at startup).
+  darkMode: 'class',
   theme: {
     extend: {
       // Mirror the website's aurora design tokens so the two clients feel

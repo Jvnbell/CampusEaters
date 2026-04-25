@@ -5,10 +5,8 @@
     "scheme": "campuseats",
     "version": "0.1.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#08070d"
     },
@@ -16,23 +14,22 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.campuseats.app",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
       "package": "com.campuseats.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#08070d"
       }
     },
     "web": {
       "bundler": "metro",
-      "output": "single",
-      "favicon": "./assets/favicon.png"
+      "output": "single"
     },
     "notification": {
-      "icon": "./assets/icon.png",
       "color": "#7c5cff",
       "iosDisplayInForeground": true,
       "androidMode": "default",
@@ -47,7 +44,8 @@
           "color": "#7c5cff",
           "defaultChannel": "order-updates"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
