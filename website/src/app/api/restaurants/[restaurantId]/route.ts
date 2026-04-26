@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 
 import { mapRestaurantWithMenuAndRating, mapReview } from '@/lib/db/mappers';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import type { RestaurantRatingRow } from '@/types/db';
 
 /** Detail endpoint for the public restaurant browse / detail pages. */
 export const dynamic = 'force-dynamic';
@@ -23,10 +22,9 @@ export async function GET(
     return NextResponse.json({ error: 'Restaurant ID is required.' }, { status: 400 });
   }
 
-  // Three parallel reads. We can't embed `restaurant_ratings(...)` into the
-  // restaurants select because PostgREST does not auto-detect FK relationships
-  // for views (see /api/restaurants list endpoint), so we fetch the rating
-  // aggregate as a separate query and merge in JS.
+  // Restaurant, rating aggregate, and recent reviews in parallel. The rating
+  // view isn't joinable via PostgREST embed (no FK on a view), so we query it
+  // directly and merge by id.
   const [restaurantResult, ratingResult, reviewsResult] = await Promise.all([
     supabaseAdmin
       .from('restaurants')
@@ -35,7 +33,7 @@ export async function GET(
       .maybeSingle(),
     supabaseAdmin
       .from('restaurant_ratings')
-      .select('restaurant_id, review_count, average_rating')
+      .select('review_count, average_rating')
       .eq('restaurant_id', restaurantId)
       .maybeSingle(),
     supabaseAdmin
@@ -58,20 +56,15 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to load reviews.' }, { status: 500 });
   }
   if (ratingResult.error) {
-    // Best-effort; restaurant should still load even if the aggregate view query fails.
+    // Non-fatal: fall through with zeroed rating instead of 500'ing the page.
     console.error('[api/restaurants/:id GET] rating lookup failed', ratingResult.error);
   }
 
-  const ratingRow = (ratingResult.data ?? null) as RestaurantRatingRow | null;
-  const restaurantWithRating = {
-    ...(restaurantResult.data as Parameters<typeof mapRestaurantWithMenuAndRating>[0]),
-    restaurant_ratings: ratingRow
-      ? { review_count: ratingRow.review_count, average_rating: ratingRow.average_rating }
-      : null,
-  };
-
   const response = NextResponse.json({
-    restaurant: mapRestaurantWithMenuAndRating(restaurantWithRating),
+    restaurant: mapRestaurantWithMenuAndRating({
+      ...restaurantResult.data,
+      restaurant_ratings: ratingResult.data ?? null,
+    } as unknown as Parameters<typeof mapRestaurantWithMenuAndRating>[0]),
     reviews: (reviewsResult.data ?? []).map((row) =>
       mapReview(row as unknown as Parameters<typeof mapReview>[0]),
     ),

@@ -2,17 +2,15 @@ import { NextResponse } from 'next/server';
 
 import { mapRestaurantWithMenuAndRating } from '@/lib/db/mappers';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import type { RestaurantRatingRow } from '@/types/db';
 
 /** Always read live menu data (avoid stale CDN/browser caches of the catalog). */
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Two parallel reads instead of one embedded select. PostgREST can't
-    // auto-detect a foreign-key relationship to `restaurant_ratings` because
-    // it's a view, not a table — embedding it (`restaurant_ratings(...)`)
-    // throws PGRST200. We merge the rating aggregates in JS instead.
+    // PostgREST can't infer a relationship from `restaurants` to the
+    // `restaurant_ratings` view (views have no foreign keys), so we fetch the
+    // aggregate separately and merge by id below.
     const [restaurantsResult, ratingsResult] = await Promise.all([
       supabaseAdmin
         .from('restaurants')
@@ -28,27 +26,23 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to load restaurants' }, { status: 500 });
     }
     if (ratingsResult.error) {
-      // Ratings are best-effort; log and treat every restaurant as unrated.
+      // Non-fatal — fall through with zero ratings rather than 500'ing the
+      // entire browse page.
       console.error('[API /restaurants GET] Failed to load ratings', ratingsResult.error);
     }
 
-    const ratingsByRestaurant = new Map<string, Pick<RestaurantRatingRow, 'review_count' | 'average_rating'>>();
-    for (const row of (ratingsResult.data ?? []) as RestaurantRatingRow[]) {
-      ratingsByRestaurant.set(row.restaurant_id, {
-        review_count: row.review_count,
-        average_rating: row.average_rating,
-      });
-    }
+    const ratingsById = new Map(
+      (ratingsResult.data ?? []).map((r) => [r.restaurant_id, r] as const),
+    );
 
-    const restaurants = (restaurantsResult.data ?? []).map((row) => {
-      const ratingRow = ratingsByRestaurant.get((row as { id: string }).id) ?? null;
-      return mapRestaurantWithMenuAndRating({
-        ...(row as Parameters<typeof mapRestaurantWithMenuAndRating>[0]),
-        restaurant_ratings: ratingRow,
-      });
+    const response = NextResponse.json({
+      restaurants: (restaurantsResult.data ?? []).map((row) =>
+        mapRestaurantWithMenuAndRating({
+          ...row,
+          restaurant_ratings: ratingsById.get(row.id) ?? null,
+        } as unknown as Parameters<typeof mapRestaurantWithMenuAndRating>[0]),
+      ),
     });
-
-    const response = NextResponse.json({ restaurants });
     response.headers.set('Cache-Control', 'private, no-store, max-age=0');
     return response;
   } catch (error) {
