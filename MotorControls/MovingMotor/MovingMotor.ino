@@ -19,36 +19,60 @@ bool forwardA = true;
 bool forwardB = true;
 bool pendingDirectionChange = false;
 bool nextDirectionA, nextDirectionB;
-
 String pendingAction = "";
 
 const int rampDelay = 10;
-const int FULL_SPEED = 200;
+const int FULL_SPEED = 180;   // slightly lower for more control
+const int TURN_SPEED = 150;
 
-// ── Encoder (right wheel only) ───────────────────────────────
+// ── Encoder ──────────────────────────────────────────────────
 volatile long right_count = 0;
 volatile unsigned long lastRightTime = 0;
 volatile unsigned long rightInterval = 0;
 
-const int MAGNETS = 8;
+const int MAGNETS = 4;
 const float WHEEL_CIRCUMFERENCE_M = 0.471; 
 const float METERS_PER_PULSE = WHEEL_CIRCUMFERENCE_M / MAGNETS;
-
-unsigned long lastDebugTime = 0;
-// ─────────────────────────────────────────────────────────────
 
 // ── Gyro ─────────────────────────────────────────────────────
 MPU6050 mpu;
 int16_t gzOffset = 0;
 const float GYRO_KP = 2.0;
+const float GYRO_DIVISOR = 64.0; // calibrated for chip
 const int MAX_GYRO_CORRECTION = 40;
 float heading = 0;
 float targetHeading = 0;
 unsigned long lastIntegrationTime = 0;
+unsigned long lastDebugTime = 0;
+
+// ── Route definition ─────────────────────────────────────────
+enum StepType { STRAIGHT, TURN, STOP_BOT };
+
+struct RouteStep {
+  StepType type;
+  float value; // meters for STRAIGHT, degrees for TURN (+right, -left)
+};
+
+// ── EDIT ROUTES HERE ─────────────────────────────────────
+// Measure distances by walking the route and counting steps
+// (1 step ≈ 0.75m) or use a tape measure.
+// Positive turn = right, negative turn = left.
+//
+// Example: go 10m, turn right 90°, go 5m, stop
+RouteStep route[] = {
+  {STRAIGHT, 10.0},
+  {TURN,     90.0},
+  {STRAIGHT,  5.0},
+  {STOP_BOT,  0.0}  // always end with STOP_BOT
+};
+
+const int ROUTE_LEN = sizeof(route) / sizeof(route[0]);
+bool routeRunning = false;
+int  routeStep = 0;
 // ─────────────────────────────────────────────────────────────
 
 void calibrateGyro() {
-  Serial.println("Calibrating gyro — keep bot still for 2 seconds...");
+  Serial.println("Calibrating gyro — keep still...");
   long sum = 0;
   for (int i = 0; i < 200; i++) {
     int16_t ax, ay, az, gx, gy, gz;
@@ -57,8 +81,7 @@ void calibrateGyro() {
     delay(10);
   }
   gzOffset = sum / 200;
-  Serial.print("gZ offset: ");
-  Serial.println(gzOffset);
+  Serial.print("gZ offset: "); Serial.println(gzOffset);
   Serial.println("Calibration done.");
 }
 
@@ -75,21 +98,96 @@ void resetEncoder() {
   interrupts();
 }
 
-// ── Gyro update — call every loop iteration ──────────────────
 void updateGyro() {
   unsigned long now = millis();
   float dt = (now - lastIntegrationTime) / 1000.0;
   lastIntegrationTime = now;
-
   int16_t ax, ay, az, gx, gy, gz;
   mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   float gzCorrected = gz - gzOffset;
-  heading += (gzCorrected / 64.0) * dt;
+  heading += (gzCorrected / GYRO_DIVISOR) * dt;
 }
 
-// ── Gyro-based turn ───────────────────────────────────────────
+// ── Ramp a motor toward target ────────────────────────────────
+void rampMotor(int &cur, int tgt, int pin) {
+  if (cur < tgt) cur++;
+  else if (cur > tgt) cur--;
+  analogWrite(pin, cur);
+}
+
+// ── Ramp both motors to zero ──────────────────────────────────
+void rampToStop() {
+  targetSpeedA = 0;
+  targetSpeedB = 0;
+  while (currentSpeedA > 0 || currentSpeedB > 0) {
+    rampMotor(currentSpeedA, 0, ENA);
+    rampMotor(currentSpeedB, 0, ENB);
+    delay(rampDelay);
+  }
+}
+
+// ── Drive straight for a given distance ──────────────────────
+void executeStraight(float meters) {
+  resetEncoder();
+  resetHeading();
+
+  long targetPulses = (long)(meters / METERS_PER_PULSE);
+
+  Serial.print("Driving ");
+  Serial.print(meters);
+  Serial.print("m (");
+  Serial.print(targetPulses);
+  Serial.println(" pulses)");
+
+  setDirection(true, true);
+  targetSpeedA = FULL_SPEED;
+  targetSpeedB = FULL_SPEED;
+
+  while (right_count < targetPulses) {
+    updateGyro();
+
+    // Gyro heading correction
+    float error = heading - targetHeading;
+    if (abs(error) < 1.5) error = 0;
+    int correction = constrain((int)(GYRO_KP * error),
+                               -MAX_GYRO_CORRECTION,
+                                MAX_GYRO_CORRECTION);
+
+    adjustedA = constrain(targetSpeedA - correction, 0, 255);
+    adjustedB = constrain(targetSpeedB + correction, 0, 255);
+
+    rampMotor(currentSpeedA, adjustedA, ENA);
+    rampMotor(currentSpeedB, adjustedB, ENB);
+
+    // Check for abort
+    if (Serial.available()) {
+      String cmd = Serial.readStringUntil('\n');
+      cmd.trim(); cmd.toLowerCase();
+      if (cmd == "s") {
+        rampToStop();
+        routeRunning = false;
+        Serial.println("Route aborted.");
+        return;
+      }
+    }
+
+    if (millis() - lastDebugTime >= 500) {
+      lastDebugTime = millis();
+      Serial.print("  Pulses: "); Serial.print(right_count);
+      Serial.print("/"); Serial.print(targetPulses);
+      Serial.print("  H: "); Serial.print(heading, 1);
+      Serial.print("  Corr: "); Serial.println(correction);
+    }
+
+    delay(rampDelay);
+  }
+
+  rampToStop();
+  Serial.println("Straight done.");
+}
+
+// ── Turn by a given angle using gyro ─────────────────────────
 void executeTurn(float targetAngle) {
-  // Reset heading so we measure from zero
   resetHeading();
 
   Serial.print("Turning ");
@@ -98,108 +196,118 @@ void executeTurn(float targetAngle) {
 
   bool turnRight = (targetAngle > 0);
 
-  // Set one wheel spinning, one stopped
   setDirection(true, true);
   if (turnRight) {
-    targetSpeedA = 0;           // right stops
-    targetSpeedB = FULL_SPEED;  // left drives
+    targetSpeedA = 0;
+    targetSpeedB = TURN_SPEED;
   } else {
-    targetSpeedA = FULL_SPEED;  // right drives
-    targetSpeedB = 0;           // left stops
+    targetSpeedA = TURN_SPEED;
+    targetSpeedB = 0;
   }
 
   unsigned long startTime = millis();
-  const unsigned long TURN_TIMEOUT = 6000; // 6 second safety timeout
+  const unsigned long TIMEOUT = 6000;
 
-  while (millis() - startTime < TURN_TIMEOUT) {
-    // Update heading
+  while (millis() - startTime < TIMEOUT) {
     updateGyro();
 
-    // Ramp motors
     rampMotor(currentSpeedA, targetSpeedA, ENA);
     rampMotor(currentSpeedB, targetSpeedB, ENB);
 
-    // Check for serial stop command during turn
-    if (Serial.available() > 0) {
-      String input = Serial.readStringUntil('\n');
-      input.trim();
-      input.toLowerCase();
-      if (input == "s") {
-        targetSpeedA = 0;
-        targetSpeedB = 0;
-        Serial.println("Turn aborted by stop command.");
-        break;
-      }
-    }
-
-    // Slow down as we approach target for accuracy
+    // Slow down for final 20 degrees
     float remaining = abs(targetAngle) - abs(heading);
     if (remaining < 20.0) {
-      // Reduce to half speed for final approach
-      if (turnRight) {
-        targetSpeedB = FULL_SPEED / 2;
-      } else {
-        targetSpeedA = FULL_SPEED / 2;
+      if (turnRight) targetSpeedB = TURN_SPEED / 2;
+      else           targetSpeedA = TURN_SPEED / 2;
+    }
+
+    // Check for abort
+    if (Serial.available()) {
+      String cmd = Serial.readStringUntil('\n');
+      cmd.trim(); cmd.toLowerCase();
+      if (cmd == "s") {
+        rampToStop();
+        routeRunning = false;
+        Serial.println("Route aborted.");
+        return;
       }
     }
 
-    // Check if reached target (95% threshold to account for overshoot)
-    if (abs(heading) >= abs(targetAngle) * 0.95) {
-      break;
-    }
+    if (abs(heading) >= abs(targetAngle) * 0.95) break;
 
     delay(rampDelay);
   }
 
-  // Ramp both motors down to zero
-  targetSpeedA = 0;
-  targetSpeedB = 0;
-  while (currentSpeedA > 0 || currentSpeedB > 0) {
-    rampMotor(currentSpeedA, 0, ENA);
-    rampMotor(currentSpeedB, 0, ENB);
-    delay(rampDelay);
-  }
-
-  Serial.print("TURN_DONE:");
-  Serial.println(heading);
-
+  rampToStop();
+  Serial.print("TURN_DONE:"); Serial.println(heading);
   resetHeading();
 }
 
-void setup() {
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(ENA, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
-  pinMode(ENB, OUTPUT);
+// ── Execute next route step ───────────────────────────────────
+void runNextStep() {
+  if (routeStep >= ROUTE_LEN) {
+    routeRunning = false;
+    Serial.println("Route complete.");
+    return;
+  }
 
-  // Right encoder on pin 3
+  RouteStep &step = route[routeStep];
+  Serial.print("[Step "); Serial.print(routeStep + 1);
+  Serial.print("/"); Serial.print(ROUTE_LEN - 1); Serial.print("] ");
+
+  switch (step.type) {
+    case STRAIGHT:
+      executeStraight(step.value);
+      break;
+    case TURN:
+      executeTurn(step.value);
+      break;
+    case STOP_BOT:
+      rampToStop();
+      routeRunning = false;
+      Serial.println("Route complete — destination reached.");
+      return;
+  }
+
+  if (routeRunning) {
+    routeStep++;
+    delay(300); // brief pause between steps
+  }
+}
+
+// ── Setup ─────────────────────────────────────────────────────
+void setup() {
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT); pinMode(ENA, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT); pinMode(ENB, OUTPUT);
+
   pinMode(3, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(3), rightPulse, FALLING);
 
   Serial.begin(115200);
-
   Wire.begin();
   mpu.initialize();
-
   mpu.setFullScaleGyroRange(0);
 
-  // Verify it took
-  Serial.print("Gyro range setting: ");
-  Serial.println(mpu.getFullScaleGyroRange());
   if (mpu.testConnection()) {
     Serial.println("MPU6050 connected.");
     calibrateGyro();
   } else {
-    Serial.println("MPU6050 not found — running without gyro correction.");
+    Serial.println("MPU6050 not found.");
   }
 
-  Serial.println("Motor Control Interface:");
-  Serial.println("Direction Commands: f, b, s, fr, fl, br, bl");
-  Serial.println("Speed Commands: 0-255");
-  Serial.println("Other: ?, help, status, cal, dist, rst");
-  Serial.println("Turn: turn <degrees>  e.g. 'turn 90' or 'turn -45'");
+  Serial.println("=== CampusEats Route Executor ===");
+  Serial.println("Commands:");
+  Serial.println("  go    — start autonomous route");
+  Serial.println("  s     — stop / abort route");
+  Serial.println("  f     — forward");
+  Serial.println("  b     — backward");
+  Serial.println("  fr/fl — pivot right/left");
+  Serial.println("  dist  — show distance");
+  Serial.println("  rst   — reset encoder");
+  Serial.println("  cal   — recalibrate gyro");
+  Serial.println("  turn <deg> — single turn");
+  Serial.print("Route has "); Serial.print(ROUTE_LEN - 1);
+  Serial.println(" steps loaded.");
 
   resetHeading();
   resetEncoder();
@@ -207,69 +315,101 @@ void setup() {
   stopMotors();
 }
 
+// ── Main loop ─────────────────────────────────────────────────
 void loop() {
-  // 1. Handle serial input
+  // If route is running, execute next step
+  if (routeRunning) {
+    runNextStep();
+    return;
+  }
+
+  // Handle serial commands
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
     input.trim();
     input.toLowerCase();
-    if (input.length() > 0) {
-      if (input == "status")       printStatus();
-      else if (input == "cal")     calibrateGyro();
-      else if (input == "dist")    printDistance();
-      else if (input == "rst")     { resetEncoder(); Serial.println("Encoder reset."); }
-      else if (input.startsWith("turn")) {
-        float angle = input.substring(4).toFloat();
-        if (angle != 0) executeTurn(angle);
-        else Serial.println("Usage: turn <degrees>");
-      }
-      else handleCommand(input);
+    if (input.length() == 0) return;
+
+    if (input == "go") {
+      routeStep = 0;
+      routeRunning = true;
+      Serial.println("Starting route...");
+    }
+    else if (input == "s") {
+      routeRunning = false;
+      targetSpeedA = 0;
+      targetSpeedB = 0;
+      Serial.println("Stopped.");
+    }
+    else if (input == "cal") {
+      calibrateGyro();
+    }
+    else if (input == "dist") {
+      printDistance();
+    }
+    else if (input == "rst") {
+      resetEncoder();
+      Serial.println("Encoder reset.");
+    }
+    else if (input == "status") {
+      printStatus();
+    }
+    else if (input.startsWith("turn")) {
+      float angle = input.substring(4).toFloat();
+      if (angle != 0) executeTurn(angle);
+      else Serial.println("Usage: turn <degrees>");
+    }
+    else if (input == "f") {
+      safeSetStraight(true, input);
+    }
+    else if (input == "b") {
+      safeSetStraight(false, input);
+    }
+    else if (input == "fr") {
+      safeMoveSharp(true, true, true, input);
+    }
+    else if (input == "fl") {
+      safeMoveSharp(true, true, false, input);
+    }
+    else if (input == "br") {
+      safeMoveSharp(false, false, true, input);
+    }
+    else if (input == "bl") {
+      safeMoveSharp(false, false, false, input);
+    }
+    else if (isNumber(input)) {
+      int val = constrain(input.toInt(), 0, 255);
+      targetSpeedA = val;
+      targetSpeedB = val;
+      resetHeading();
+      Serial.print("Speed: "); Serial.println(val);
+    }
+    else {
+      Serial.print("Unknown: "); Serial.println(input);
     }
   }
 
-  // 2. Integrate gyro
-  updateGyro();
-
-  // 3. Compute corrections when driving straight
+  // Normal straight-line gyro correction when driving manually
   bool movingStraight = (targetSpeedA > 0 && targetSpeedB > 0 && forwardA == forwardB);
-
   adjustedA = targetSpeedA;
   adjustedB = targetSpeedB;
 
   if (movingStraight) {
+    updateGyro();
     float error = heading - targetHeading;
-    if (abs(error) < 1.5) error = 0;  // deadband
-
-    int correction = constrain(
-      (int)(GYRO_KP * error),
-      -MAX_GYRO_CORRECTION,
-       MAX_GYRO_CORRECTION
-    );
-
-    adjustedA = constrain(targetSpeedA - correction, 0, 255);  // right
-    adjustedB = constrain(targetSpeedB + correction, 0, 255);  // left
-
-    // Debug every 200ms
-    if (millis() - lastDebugTime >= 200) {
-      lastDebugTime = millis();
-      Serial.print("H:"); Serial.print(heading, 1);
-      Serial.print(" Err:"); Serial.print(error, 1);
-      Serial.print(" Corr:"); Serial.print(correction);
-      Serial.print(" A(R):"); Serial.print(adjustedA);
-      Serial.print(" B(L):"); Serial.print(adjustedB);
-      Serial.print(" RPulses:"); Serial.println(right_count);
-    }
+    if (abs(error) < 1.5) error = 0;
+    int correction = constrain((int)(GYRO_KP * error),
+                               -MAX_GYRO_CORRECTION, MAX_GYRO_CORRECTION);
+    adjustedA = constrain(targetSpeedA - correction, 0, 255);
+    adjustedB = constrain(targetSpeedB + correction, 0, 255);
   } else {
-    if (targetSpeedA == 0 && targetSpeedB == 0) {
-      resetHeading();
-    }
+    updateGyro();
+    if (targetSpeedA == 0 && targetSpeedB == 0) resetHeading();
   }
 
-  // 4. Ramp motors
   rampMotor(currentSpeedA, adjustedA, ENA);
   rampMotor(currentSpeedB, adjustedB, ENB);
 
-  // 5. Safe direction change
   if (pendingDirectionChange && currentSpeedA == 0 && currentSpeedB == 0) {
     setDirection(nextDirectionA, nextDirectionB);
     forwardA = nextDirectionA;
@@ -277,8 +417,6 @@ void loop() {
     pendingDirectionChange = false;
     Serial.println("Direction switched safely.");
     if (pendingAction != "") {
-      Serial.print("Resuming: ");
-      Serial.println(pendingAction);
       handleCommand(pendingAction);
       pendingAction = "";
     }
@@ -287,46 +425,10 @@ void loop() {
   delay(rampDelay);
 }
 
-
+// ── Helpers ───────────────────────────────────────────────────
 void handleCommand(String input) {
-  if (input == "?" || input == "help") {
-    Serial.println("Direction Commands: f, b, s, fr, fl, br, bl");
-    Serial.println("Speed Commands: 0-255");
-    Serial.println("Other: cal, dist, rst, status");
-    Serial.println("Turn: turn <degrees>");
-  } else if (input == "fr") {
-    safeMoveSharp(true, true, true, input);
-  } else if (input == "fl") {
-    safeMoveSharp(true, true, false, input);
-  } else if (input == "br") {
-    safeMoveSharp(false, false, true, input);
-  } else if (input == "bl") {
-    safeMoveSharp(false, false, false, input);
-  } else if (input == "f") {
-    safeSetStraight(true, input);
-  } else if (input == "b") {
-    safeSetStraight(false, input);
-  } else if (input == "s") {
-    targetSpeedA = 0;
-    targetSpeedB = 0;
-    Serial.println("Stopping motors...");
-  } else if (isNumber(input)) {
-    int val = constrain(input.toInt(), 0, 255);
-    targetSpeedA = val;
-    targetSpeedB = val;
-    resetHeading();
-    Serial.print("Target speed set to: ");
-    Serial.println(val);
-  } else {
-    Serial.print("Unknown command: ");
-    Serial.println(input);
-  }
-}
-
-void rampMotor(int &currentSpeed, int targetSpeed, int pwmPin) {
-  if (currentSpeed < targetSpeed) currentSpeed++;
-  else if (currentSpeed > targetSpeed) currentSpeed--;
-  analogWrite(pwmPin, currentSpeed);
+  if (input == "f") safeSetStraight(true, input);
+  else if (input == "b") safeSetStraight(false, input);
 }
 
 void safeSetStraight(bool fwd, String command) {
@@ -338,12 +440,11 @@ void safeSetStraight(bool fwd, String command) {
     pendingAction = command;
     targetSpeedA = 0;
     targetSpeedB = 0;
-    Serial.println("Safe reversal: slowing to 0 before switching direction...");
+    Serial.println("Safe reversal in progress...");
   } else {
     targetSpeedA = FULL_SPEED;
     targetSpeedB = FULL_SPEED;
     setDirection(fwd, fwd);
-    Serial.print("Moving straight: ");
     Serial.println(fwd ? "Forward" : "Backward");
   }
 }
@@ -358,23 +459,17 @@ void safeMoveSharp(bool fwdA, bool fwdB, bool stopLeft, String command) {
     pendingAction = command;
     targetSpeedA = 0;
     targetSpeedB = 0;
-    Serial.println("Safe reversal: slowing to 0 before switching direction...");
   } else {
     setDirection(fwdA, fwdB);
-    if (stopLeft) {
-      targetSpeedA = 0;
-      targetSpeedB = FULL_SPEED;
-    } else {
-      targetSpeedA = FULL_SPEED;
-      targetSpeedB = 0;
-    }
+    targetSpeedA = stopLeft ? 0 : FULL_SPEED;
+    targetSpeedB = stopLeft ? FULL_SPEED : 0;
   }
 }
 
 void setDirection(bool fwdA, bool fwdB) {
   if (fwdA) { digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH); }
   else       { digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);  }
-  if (fwdB) { digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  }
+  if (fwdB)  { digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  }
   else       { digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH); }
 }
 
@@ -402,30 +497,19 @@ void rightPulse() {
 
 void printDistance() {
   float dist = right_count * METERS_PER_PULSE;
-  Serial.print("DIST:");
-  Serial.print(dist, 3);
-  Serial.print("m (");
-  Serial.print(right_count);
+  Serial.print("DIST:"); Serial.print(dist, 3);
+  Serial.print("m ("); Serial.print(right_count);
   Serial.println(" pulses)");
 }
 
 void printStatus() {
-  Serial.println("=== MOTOR STATUS ===");
-  Serial.print("Right motor (A): ");
-  if (currentSpeedA == 0) Serial.print("Stopped");
-  else Serial.print(forwardA ? "Forward" : "Backward");
-  Serial.print(" | Speed: "); Serial.println(currentSpeedA);
-  Serial.print("Left motor (B): ");
-  if (currentSpeedB == 0) Serial.print("Stopped");
-  else Serial.print(forwardB ? "Forward" : "Backward");
-  Serial.print(" | Speed: "); Serial.println(currentSpeedB);
+  Serial.println("=== STATUS ===");
+  Serial.print("Route running: "); Serial.println(routeRunning ? "YES" : "NO");
+  Serial.print("Step: "); Serial.print(routeStep); Serial.print("/");
+  Serial.println(ROUTE_LEN - 1);
   Serial.print("Heading: "); Serial.println(heading, 2);
-  Serial.print("Gyro offset: "); Serial.println(gzOffset);
   Serial.print("Right pulses: "); Serial.println(right_count);
   Serial.print("Distance: ");
-  Serial.print(right_count * METERS_PER_PULSE, 3);
-  Serial.println("m");
-  if (pendingDirectionChange)
-    Serial.println("Pending direction change in progress...");
-  Serial.println("====================");
+  Serial.print(right_count * METERS_PER_PULSE, 3); Serial.println("m");
+  Serial.println("==============");
 }
