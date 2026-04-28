@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Package } from 'lucide-react';
+import { Package, Star } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
+import type { OrderWithRelations } from '@/types/db';
 
 type RestaurantOption = {
   id: string;
@@ -33,18 +34,54 @@ type UserOption = {
 
 type SelectedItemsState = Record<string, number>;
 
+const LAST_LOCATION_KEY = 'campuseats:lastDeliveryLocation';
+const FAVORITES_KEY = 'campuseats:favoriteMenuItemIdsByRestaurant:v1';
+
+type FavoritesMap = Record<string, string[]>;
+
+const loadFavorites = (): FavoritesMap => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(FAVORITES_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as FavoritesMap;
+  } catch {
+    return {};
+  }
+};
+
+const saveFavorites = (map: FavoritesMap) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(map));
+};
+
 const DeliveryRequest = () => {
-  const { user: authUser, isLoading: authLoading } = useSupabaseAuth();
+  const { supabase, user: authUser, isLoading: authLoading } = useSupabaseAuth();
   const searchParams = useSearchParams();
   const preselectRestaurantId = searchParams?.get('restaurant') ?? '';
 
   const [restaurantId, setRestaurantId] = useState('');
   const [deliveryLocation, setDeliveryLocation] = useState('');
+  const [menuSearch, setMenuSearch] = useState('');
+  const [filterVegetarian, setFilterVegetarian] = useState(false);
+  const [filterVegan, setFilterVegan] = useState(false);
+  const [filterGlutenFree, setFilterGlutenFree] = useState(false);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [lastOrder, setLastOrder] = useState<OrderWithRelations | null>(null);
   const [restaurants, setRestaurants] = useState<RestaurantOption[]>([]);
   const [currentUser, setCurrentUser] = useState<UserOption | null>(null);
   const [selectedItems, setSelectedItems] = useState<SelectedItemsState>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const getAuthHeaders = useCallback(async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : undefined;
+  }, [supabase]);
 
   // Auto-select the restaurant when arriving via /restaurants/<id> deep link.
   // We wait for the restaurant list to populate so the <Select> resolves a
@@ -93,6 +130,12 @@ const DeliveryRequest = () => {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem(LAST_LOCATION_KEY);
+    if (saved) setDeliveryLocation(saved);
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
 
     const loadCurrentUser = async () => {
@@ -102,7 +145,11 @@ const DeliveryRequest = () => {
       }
 
       try {
-        const response = await fetch(`/api/users?email=${encodeURIComponent(authUser.email)}`);
+        const headers = await getAuthHeaders();
+
+        const response = await fetch(`/api/users?email=${encodeURIComponent(authUser.email)}`, {
+          headers,
+        });
         if (!response.ok) {
           throw new Error('Unable to find user profile');
         }
@@ -125,17 +172,124 @@ const DeliveryRequest = () => {
     return () => {
       isMounted = false;
     };
-  }, [authUser]);
+  }, [authUser, getAuthHeaders]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLastOrder = async () => {
+      if (!authUser?.email) {
+        setLastOrder(null);
+        return;
+      }
+
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch('/api/orders', { cache: 'no-store', headers });
+        if (!res.ok) return;
+        const data = (await res.json()) as { orders?: OrderWithRelations[] };
+        const orders = data.orders ?? [];
+        if (!orders.length) {
+          if (!cancelled) setLastOrder(null);
+          return;
+        }
+        const sorted = [...orders].sort(
+          (a, b) => Date.parse(b.placedAt) - Date.parse(a.placedAt),
+        );
+        if (!cancelled) setLastOrder(sorted[0] ?? null);
+      } catch {
+        if (!cancelled) setLastOrder(null);
+      }
+    };
+
+    void loadLastOrder();
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.email, getAuthHeaders]);
 
   useEffect(() => {
     // Reset selections when restaurant changes
     setSelectedItems({});
+    setMenuSearch('');
+    setFilterVegetarian(false);
+    setFilterVegan(false);
+    setFilterGlutenFree(false);
+    setFavoritesOnly(false);
+  }, [restaurantId]);
+
+  useEffect(() => {
+    if (!restaurantId) {
+      setFavoriteIds([]);
+      return;
+    }
+    const all = loadFavorites();
+    setFavoriteIds(all[restaurantId] ?? []);
   }, [restaurantId]);
 
   const currentRestaurant = useMemo(
     () => restaurants.find((restaurant) => restaurant.id === restaurantId),
     [restaurants, restaurantId],
   );
+
+  const toggleFavorite = (menuItemId: string) => {
+    if (!restaurantId) return;
+    setFavoriteIds((prev) => {
+      const next = prev.includes(menuItemId) ? prev.filter((id) => id !== menuItemId) : [...prev, menuItemId];
+      const all = loadFavorites();
+      all[restaurantId] = next;
+      saveFavorites(all);
+      return next;
+    });
+  };
+
+  const applyDietHeuristic = (name: string) => {
+    const n = name.toLowerCase();
+    return {
+      vegetarian:
+        /\b(veggie|vegetarian|veg\b|salad|garden)\b/i.test(n) && !/\b(chicken|beef|pork|turkey|fish|salmon|tuna|shrimp)\b/i.test(n),
+      vegan: /\b(vegan|plant[-\s]?based)\b/i.test(n),
+      glutenFree: /\b(gluten[-\s]?free|gf\b)\b/i.test(n),
+    };
+  };
+
+  const filteredMenuItems = useMemo(() => {
+    if (!currentRestaurant) return [];
+    const needle = menuSearch.trim().toLowerCase();
+    const favSet = new Set(favoriteIds);
+
+    return currentRestaurant.menuItems.filter((item) => {
+      if (needle && !item.name.toLowerCase().includes(needle)) return false;
+
+      const diet = applyDietHeuristic(item.name);
+      if (filterVegetarian && !diet.vegetarian) return false;
+      if (filterVegan && !diet.vegan) return false;
+      if (filterGlutenFree && !diet.glutenFree) return false;
+      if (favoritesOnly && !favSet.has(item.id)) return false;
+
+      return true;
+    });
+  }, [
+    currentRestaurant,
+    menuSearch,
+    filterVegetarian,
+    filterVegan,
+    filterGlutenFree,
+    favoritesOnly,
+    favoriteIds,
+  ]);
+
+  const handleReorderLast = () => {
+    if (!lastOrder) return;
+    setRestaurantId(lastOrder.restaurantId);
+    setDeliveryLocation((prev) => prev || lastOrder.deliveryLocation);
+    const next: SelectedItemsState = {};
+    for (const line of lastOrder.orderItems) {
+      next[line.menuItem.id] = line.quantity;
+    }
+    setSelectedItems(next);
+    toast.success('Loaded your last order selections. Adjust anything you need before submitting.');
+  };
 
   const toggleMenuItem = (menuItemId: string) => {
     setSelectedItems((prev) => {
@@ -195,10 +349,13 @@ const DeliveryRequest = () => {
         return;
       }
 
+      const authHeaders = await getAuthHeaders();
+
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeaders,
         },
         body: JSON.stringify({
           restaurantId,
@@ -222,6 +379,9 @@ const DeliveryRequest = () => {
       }
 
       toast.success('Delivery request submitted! Your order has been placed.');
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(LAST_LOCATION_KEY, deliveryLocation.trim());
+      }
       setRestaurantId('');
       setDeliveryLocation('');
       setSelectedItems({});
@@ -294,7 +454,13 @@ const DeliveryRequest = () => {
               id="deliveryLocation"
               placeholder="Enter delivery address"
               value={deliveryLocation}
-              onChange={(event) => setDeliveryLocation(event.target.value)}
+              onChange={(event) => {
+                const val = event.target.value;
+                setDeliveryLocation(val);
+                if (typeof window !== 'undefined') {
+                  window.localStorage.setItem(LAST_LOCATION_KEY, val);
+                }
+              }}
               required
             />
             <p className="text-xs text-muted-foreground">
@@ -302,53 +468,126 @@ const DeliveryRequest = () => {
             </p>
           </div>
 
+          {lastOrder ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Order again
+                  </p>
+                  <p className="text-sm text-foreground">
+                    Repeat your last order (#{lastOrder.orderNumber}) from {lastOrder.restaurant.name}.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" className="rounded-full" onClick={handleReorderLast}>
+                  Load last selections
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-3">
             <Label>Menu Items *</Label>
             {restaurantId === '' ? (
               <p className="text-sm text-muted-foreground">Select a restaurant to view available items.</p>
             ) : currentRestaurant && currentRestaurant.menuItems.length > 0 ? (
-              <div className="space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                {currentRestaurant.menuItems.map((item) => {
+              <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="space-y-2">
+                  <Label htmlFor="menuSearch">Search menu</Label>
+                  <Input
+                    id="menuSearch"
+                    placeholder="Search by item name…"
+                    value={menuSearch}
+                    onChange={(event) => setMenuSearch(event.target.value)}
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <Checkbox checked={filterVegetarian} onCheckedChange={(v) => setFilterVegetarian(Boolean(v))} />
+                    Vegetarian-ish
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <Checkbox checked={filterVegan} onCheckedChange={(v) => setFilterVegan(Boolean(v))} />
+                    Vegan keywords
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <Checkbox checked={filterGlutenFree} onCheckedChange={(v) => setFilterGlutenFree(Boolean(v))} />
+                    Gluten-free keywords
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <Checkbox checked={favoritesOnly} onCheckedChange={(v) => setFavoritesOnly(Boolean(v))} />
+                    Favorites only
+                  </label>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Diet filters use simple keyword matching on menu names until structured tags exist in the catalog.
+                </p>
+
+                {filteredMenuItems.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No items match your filters.</p>
+                ) : (
+                  filteredMenuItems.map((item) => {
                   const isSelected = Boolean(selectedItems[item.id]);
                   const quantity = selectedItems[item.id] ?? 1;
+                  const isFavorite = favoriteIds.includes(item.id);
                   return (
                     <div
                       key={item.id}
-                      className={`flex flex-col gap-2 rounded-xl border p-3 transition md:flex-row md:items-center md:justify-between ${
+                      className={`flex flex-col gap-3 rounded-xl border p-3 transition sm:flex-row sm:items-center sm:justify-between ${
                         isSelected
                           ? 'border-primary/30 bg-primary/[0.06]'
                           : 'border-transparent bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]'
                       }`}
                     >
-                      <label className="flex items-center gap-3">
+                      <label className="flex flex-1 items-start gap-3">
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={() => toggleMenuItem(item.id)}
                           aria-label={`Select ${item.name}`}
                         />
-                        <span>
+                        <span className="min-w-0">
                           <span className="font-medium text-foreground">{item.name}</span>
                           <span className="ml-2 text-sm text-muted-foreground">${item.price}</span>
                         </span>
                       </label>
-                      {isSelected && (
-                        <div className="flex items-center gap-2">
-                          <Label htmlFor={`quantity-${item.id}`} className="text-xs text-muted-foreground">
-                            Qty
-                          </Label>
-                          <Input
-                            id={`quantity-${item.id}`}
-                            type="number"
-                            min={1}
-                            value={quantity}
-                            onChange={(event) => updateQuantity(item.id, Number(event.target.value))}
-                            className="h-9 w-20"
+
+                      <div className="flex items-center justify-end gap-3 sm:justify-end">
+                        {isSelected ? (
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor={`quantity-${item.id}`} className="text-xs text-muted-foreground">
+                              Qty
+                            </Label>
+                            <Input
+                              id={`quantity-${item.id}`}
+                              type="number"
+                              min={1}
+                              value={quantity}
+                              onChange={(event) => updateQuantity(item.id, Number(event.target.value))}
+                              className="h-9 w-20"
+                            />
+                          </div>
+                        ) : (
+                          <span className="hidden text-xs text-muted-foreground sm:inline"> </span>
+                        )}
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 rounded-full"
+                          onClick={() => toggleFavorite(item.id)}
+                          aria-label={isFavorite ? 'Remove favorite' : 'Add favorite'}
+                        >
+                          <Star
+                            className={`h-4 w-4 ${isFavorite ? 'fill-amber-300 text-amber-300' : 'text-muted-foreground'}`}
                           />
-                        </div>
-                      )}
+                        </Button>
+                      </div>
                     </div>
                   );
-                })}
+                  })
+                )}
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">No menu items found for this restaurant.</p>

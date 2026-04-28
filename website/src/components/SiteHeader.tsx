@@ -116,22 +116,44 @@ export const SiteHeader = () => {
           })}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {isLoading ? (
             <div className="flex items-center gap-2">
               <div className="h-9 w-16 animate-pulse rounded-full bg-white/5" />
               <div className="h-9 w-24 animate-pulse rounded-full bg-white/5" />
             </div>
           ) : user ? (
-            <Button
-              onClick={handleSignOut}
-              size="sm"
-              variant="outline"
-              disabled={isSigningOut}
-              className="rounded-full border-white/10 bg-white/[0.03] text-foreground hover:bg-white/[0.07] hover:text-foreground"
-            >
-              {isSigningOut ? 'Signing out…' : 'Sign out'}
-            </Button>
+            <>
+              <div className="hidden max-w-[min(520px,calc(100vw-360px))] flex-col items-end text-right leading-tight sm:flex">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Signed in as
+                </span>
+                <span className="truncate text-xs font-medium text-foreground">{user.email}</span>
+                {profile?.firstName ? (
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {profile.firstName}
+                    {profile.lastName ? ` ${profile.lastName}` : ''}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="flex max-w-[140px] flex-col items-end text-right leading-tight sm:hidden">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Signed in
+                </span>
+                <span className="truncate text-[11px] font-medium text-foreground">{user.email}</span>
+              </div>
+
+              <Button
+                onClick={handleSignOut}
+                size="sm"
+                variant="outline"
+                disabled={isSigningOut}
+                className="rounded-full border-white/10 bg-white/[0.03] text-foreground hover:bg-white/[0.07] hover:text-foreground"
+              >
+                {isSigningOut ? 'Signing out…' : 'Sign out'}
+              </Button>
+            </>
           ) : (
             <>
               <Button

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
@@ -21,9 +22,11 @@ import {
 } from 'lucide-react';
 
 import { AdminCatalogHealthBanner } from '@/components/AdminCatalogHealthBanner';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
 import { useCurrentProfile, type UserProfile } from '@/hooks/use-current-profile';
+import type { Order, OrderStatus } from '@/types/db';
 
 /* -------------------------------------------------------------------------- */
 /* Marketing landing                                                           */
@@ -380,6 +383,95 @@ const PageShell = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
+const ORDER_STATUS_FLOW: OrderStatus[] = ['SENT', 'RECEIVED', 'SHIPPING', 'DELIVERED'];
+
+const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
+  SENT: 'Sent',
+  RECEIVED: 'Received',
+  SHIPPING: 'Shipping',
+  DELIVERED: 'Delivered',
+};
+
+const statusChipClass = (status: OrderStatus, current: OrderStatus) => {
+  const idx = ORDER_STATUS_FLOW.indexOf(status);
+  const cur = ORDER_STATUS_FLOW.indexOf(current);
+  const done = cur > idx;
+  const active = cur === idx;
+
+  if (done) return 'border-success/30 bg-success/10 text-success';
+  if (active) return 'border-primary/40 bg-primary/10 text-primary';
+  return 'border-white/10 bg-white/[0.03] text-muted-foreground';
+};
+
+const RecentOrderSnapshot = () => {
+  const { supabase } = useSupabaseAuth();
+  const [latest, setLatest] = useState<Order | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const res = await fetch('/api/orders', {
+          cache: 'no-store',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { orders?: Order[] };
+        const orders = data.orders ?? [];
+        if (!orders.length) {
+          if (!cancelled) setLatest(null);
+          return;
+        }
+        const sorted = [...orders].sort((a, b) => Date.parse(b.placedAt) - Date.parse(a.placedAt));
+        if (!cancelled) setLatest(sorted[0] ?? null);
+      } catch {
+        if (!cancelled) setLatest(null);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  if (!latest) return null;
+
+  return (
+    <div className="glass-panel border border-white/10 p-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Latest order
+          </p>
+          <p className="font-display text-xl font-semibold text-foreground">
+            Order #{latest.orderNumber}{' '}
+            <span className="text-sm font-normal text-muted-foreground">
+              · placed {new Date(latest.placedAt).toLocaleString()}
+            </span>
+          </p>
+        </div>
+        <Button asChild variant="outline" className="rounded-full border-white/15 bg-white/[0.03]">
+          <Link href="/track-package">View tracking</Link>
+        </Button>
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {ORDER_STATUS_FLOW.map((status) => (
+          <Badge key={status} className={`rounded-full ${statusChipClass(status, latest.status)}`}>
+            {ORDER_STATUS_LABEL[status]}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const RestaurantHome = ({ profile }: { profile: UserProfile }) => (
   <PageShell>
     <div className="mx-auto max-w-6xl space-y-10">
@@ -520,6 +612,8 @@ const UserHome = ({ profile }: { profile: UserProfile | null }) => (
           restaurants or track active orders in real time.
         </p>
       </div>
+
+      {profile?.role === 'USER' ? <RecentOrderSnapshot /> : null}
 
       <div className="grid gap-6 md:grid-cols-2">
         <div className="glass-panel-strong gradient-border relative overflow-hidden p-7">

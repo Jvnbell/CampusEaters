@@ -97,6 +97,7 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
   const [lastName, setLastName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState<string | null>(null);
 
   const copy = useMemo(() => copyByVariant[variant], [variant]);
 
@@ -166,6 +167,7 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
       }
 
       setIsSubmitting(false);
+      setPendingConfirmationEmail(email.trim().toLowerCase());
       toast.success('Check your inbox to confirm your email address before signing in.');
       setAuthMode('signIn');
       setPassword('');
@@ -185,7 +187,14 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
     }
 
     try {
-      const profileResponse = await fetch(`/api/users?email=${encodeURIComponent(email)}`);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const profileResponse = await fetch(`/api/users?email=${encodeURIComponent(email)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       if (!profileResponse.ok) {
         const body = await profileResponse.json().catch(() => ({}));
         throw new Error(body.error ?? 'Unable to load profile.');
@@ -198,6 +207,7 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
       };
 
       toast.success('Signed in successfully.');
+      setPendingConfirmationEmail(null);
 
       if (profile.role === 'RESTAURANT' && profile.restaurantId) {
         router.push('/restaurant/orders' as any);
@@ -223,6 +233,60 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
 
   const toggleAuthMode = () => {
     setAuthMode((mode) => (mode === 'signIn' ? 'signUp' : 'signIn'));
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!pendingConfirmationEmail) return;
+    setIsSubmitting(true);
+    const redirectTo = `${window.location.origin}${redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`}`;
+
+    const resend = (supabase.auth as unknown as { resend?: (args: unknown) => Promise<{ error: Error | null }> }).resend;
+    if (!resend) {
+      setIsSubmitting(false);
+      toast.error('Email resend is not available in this Supabase client version.');
+      return;
+    }
+
+    const { error } = await resend({
+      type: 'signup',
+      email: pendingConfirmationEmail,
+      options: { emailRedirectTo: redirectTo },
+    });
+
+    setIsSubmitting(false);
+    if (error) {
+      toast.error(error.message ?? 'Failed to resend confirmation email.');
+      return;
+    }
+    toast.success('Confirmation email resent.');
+  };
+
+  const handleDevConfirmEmail = async () => {
+    if (!pendingConfirmationEmail) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/dev-confirm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: pendingConfirmationEmail }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error ?? 'Failed to confirm email.');
+      }
+      toast.success('Email confirmed (dev). You can sign in now.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to confirm email.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAlreadyConfirmed = () => {
+    toast.message('Try signing in now', {
+      description: 'If your inbox still shows “unconfirmed”, use “Resend confirmation email.”',
+    });
+    setPassword('');
   };
 
   const HeadingIcon = copy.emptyState?.headingIcon === 'shieldCheck' ? ShieldCheck : Shield;
@@ -381,6 +445,49 @@ export const AuthCard = ({ variant = 'default', defaultMode = 'signIn', classNam
           >
             {isSubmitting ? 'Please wait…' : authMode === 'signIn' ? 'Sign in' : 'Sign up'}
           </Button>
+
+          {authMode === 'signIn' && pendingConfirmationEmail ? (
+            <div className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-3">
+              <p className="text-xs text-muted-foreground">
+                Waiting on confirmation for{' '}
+                <span className="font-medium text-foreground">{pendingConfirmationEmail}</span>.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full rounded-full"
+                  onClick={handleResendConfirmation}
+                  disabled={isSubmitting}
+                >
+                  Resend confirmation email
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full rounded-full"
+                  onClick={handleAlreadyConfirmed}
+                  disabled={isSubmitting}
+                >
+                  I already confirmed
+                </Button>
+                {process.env.NEXT_PUBLIC_DEV_CONFIRM_EMAIL === 'true' ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full rounded-full"
+                    onClick={handleDevConfirmEmail}
+                    disabled={isSubmitting}
+                  >
+                    Confirm (dev)
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-[11px] text-muted-foreground/80">
+                Campus inboxes sometimes delay or filter automated mail—check spam/quarantine too.
+              </p>
+            </div>
+          ) : null}
 
           <p className="text-center text-sm text-muted-foreground">
             {authMode === 'signIn' ? "Don't have an account yet?" : 'Already registered?'}{' '}

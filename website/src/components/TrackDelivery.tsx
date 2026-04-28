@@ -83,7 +83,7 @@ const statusFriendlyText: Record<OrderStatus, string> = {
 };
 
 const TrackDelivery = () => {
-  const { user: authUser, isLoading: authLoading } = useSupabaseAuth();
+  const { supabase, user: authUser, isLoading: authLoading } = useSupabaseAuth();
   const [orders, setOrders] = useState<OrderWithRelations[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
 
@@ -107,16 +107,23 @@ const TrackDelivery = () => {
       setIsLoadingOrders(true);
 
       try {
-        const userResponse = await fetch(`/api/users?email=${encodeURIComponent(authUser.email)}`);
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = session?.access_token;
+
+        const userResponse = await fetch(`/api/users?email=${encodeURIComponent(authUser.email)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         if (!userResponse.ok) {
           throw new Error('Unable to locate your CampusEats profile.');
         }
 
-        const { user } = (await userResponse.json()) as {
-          user: { id: string; firstName: string; lastName: string; email: string };
-        };
+        await userResponse.json();
 
-        const ordersResponse = await fetch(`/api/orders?userId=${user.id}`);
+        const ordersResponse = await fetch(`/api/orders`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         if (!ordersResponse.ok) {
           const body = await ordersResponse.json().catch(() => ({}));
           throw new Error(body.error ?? 'Failed to fetch orders.');
@@ -134,7 +141,7 @@ const TrackDelivery = () => {
     };
 
     fetchOrders();
-  }, [authUser, authLoading]);
+  }, [authUser, authLoading, supabase]);
 
   return (
     <Card className="glass-panel-strong mx-auto w-full max-w-4xl border-0">
